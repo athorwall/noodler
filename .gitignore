@@ -1,3 +1,4 @@
 checkpoint_data
 music/*
 .DS_Store
+__pycache__/*
