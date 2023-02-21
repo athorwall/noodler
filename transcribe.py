@@ -26,6 +26,9 @@ class TranscribeContext:
         self.time = None
         self.on_change = on_change
 
+    def set_on_change(self, on_change):
+        self.on_change = on_change
+
     def run(self):
         print("Ready to play " + self.name)
         print_help()
@@ -138,6 +141,18 @@ class TranscribeContext:
         self.end_timestamp = self.checkpoints[end]
         self.play()
 
+    def set_start(self, start):
+        self.start_timestamp = start
+        if self.end_timestamp == None or self.end_timestamp < self.start_timestamp:
+            self.end_timestamp = self.start_timestamp
+        self.current_timestamp = self.start_timestamp
+
+    def set_end(self, end):
+        self.end_timestamp = end
+        if self.end_timestamp == None or self.end_timestamp < self.start_timestamp:
+            self.end_timestamp = self.start_timestamp
+        self.current_timestamp = self.start_timestamp
+
     def stop(self):
         self.playing = False
 
@@ -156,6 +171,7 @@ class TranscribeContext:
         def pyaudio_callback(in_data, frame_count, time_info, status):
             nonlocal current_frame, start_frame, end_frame, self
             (data, current_frame) = self.extract_audio_data(self.data, start_frame, end_frame, current_frame, frame_count)
+            self.current_timestamp = librosa.samples_to_time(current_frame, sr=self.sampling_rate) * self.play_rate
             if self.playing:
                 status = pyaudio.paContinue
             else:
