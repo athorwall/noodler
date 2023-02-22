@@ -19,7 +19,7 @@ class TranscribeContext:
         self.playing = False
         self.current_timestamp = 0
         self.start_timestamp = 0
-        self.end_timestamp = None
+        self.end_timestamp = librosa.get_duration(self.data, sr=self.sampling_rate)
         self.restart = False
         self.checkpoints = dict()
         self.tempo = None
@@ -42,8 +42,6 @@ class TranscribeContext:
             args = s.split()[1:]
             if command == "play" or command == "":
                 self.play_default()
-            elif command == "from":
-                self.play_from(args[0])
             elif command == "loop":
                 self.play_loop(args[0], args[1])
             elif command == "tempo":
@@ -60,26 +58,6 @@ class TranscribeContext:
             elif command == "time":
                 self.time = int(args[0])
                 print("Set time to {} beats per measure.".format(self.time))
-            elif command == "move":
-                seconds = self.get_duration_in_seconds(args[0])
-                self.current_timestamp += seconds
-                if (self.end_timestamp != None and self.current_timestamp > self.end_timestamp) or self.current_timestamp < self.start_timestamp:
-                    self.end_timestamp = None
-                    self.start_timestamp = 0
-            elif command == "shift":
-                if self.end_timestamp != None:
-                    seconds = self.get_duration_in_seconds(args[0])
-                    self.start_timestamp += seconds
-                    self.end_timestamp += seconds
-                    self.current_timestamp = self.start_timestamp
-            elif command == "shiftstart":
-                if self.end_timestamp != None:
-                    seconds = self.get_duration_in_seconds(args[0])
-                    self.start_timestamp += seconds
-            elif command == "shiftend":
-                if self.end_timestamp != None:
-                    seconds = self.get_duration_in_seconds(args[0])
-                    self.end_timestamp += seconds
             elif command == "set":
                 checkpoint = args[0]
                 self.checkpoints[checkpoint] = self.current_timestamp
@@ -113,21 +91,12 @@ class TranscribeContext:
     def play_default(self):
         if self.current_timestamp < self.start_timestamp:
             self.current_timestamp = self.start_timestamp
-        if self.end_timestamp != None and self.current_timestamp > self.end_timestamp:
-            self.current_timestamp = self.end_frame
+        if self.current_timestamp > self.end_timestamp:
+            self.current_timestamp = self.end_timestamp
         if self.restart:
             self.current_timestamp = self.start_timestamp
         self.play()
 
-    def play_from(self, point):
-        if point not in self.checkpoints:
-            print("Checkpoint " + point + " does not exist")
-            return
-        timestamp = self.checkpoints[point]
-        self.current_timestamp = timestamp 
-        self.start_timestamp = timestamp 
-        self.end_timestamp = None
-        self.play()
 
     def play_loop(self, start, end):
         if start not in self.checkpoints:
@@ -143,15 +112,21 @@ class TranscribeContext:
 
     def set_start(self, start):
         self.start_timestamp = start
-        if self.end_timestamp == None or self.end_timestamp < self.start_timestamp:
+        if self.end_timestamp < self.start_timestamp:
             self.end_timestamp = self.start_timestamp
-        self.current_timestamp = self.start_timestamp
+        self.clamp_timestamp()
 
     def set_end(self, end):
         self.end_timestamp = end
-        if self.end_timestamp == None or self.end_timestamp < self.start_timestamp:
+        if self.end_timestamp < self.start_timestamp:
             self.end_timestamp = self.start_timestamp
-        self.current_timestamp = self.start_timestamp
+        self.clamp_timestamp()
+
+    def clamp_timestamp(self):
+        if self.current_timestamp < self.start_timestamp:
+            self.current_timestamp = self.start_timestamp
+        if self.current_timestamp > self.end_timestamp:
+            self.current_timestamp = self.end_timestamp
 
     def stop(self):
         self.playing = False
@@ -162,25 +137,20 @@ class TranscribeContext:
 
     def play_internal(self):
         self.playing = True
-        start_frame = librosa.time_to_samples(self.start_timestamp / self.play_rate, sr=self.sampling_rate)
-        if self.end_timestamp != None:
-            end_frame = librosa.time_to_samples(self.end_timestamp / self.play_rate, sr=self.sampling_rate)
-        else:
-            end_frame = None
-        current_frame = librosa.time_to_samples(self.current_timestamp / self.play_rate, sr=self.sampling_rate)
         def pyaudio_callback(in_data, frame_count, time_info, status):
-            nonlocal current_frame, start_frame, end_frame, self
+            nonlocal self
+            start_frame = librosa.time_to_samples(self.start_timestamp / self.play_rate, sr=self.sampling_rate)
+            end_frame = librosa.time_to_samples(self.end_timestamp / self.play_rate, sr=self.sampling_rate)
+            current_frame = librosa.time_to_samples(self.current_timestamp / self.play_rate, sr=self.sampling_rate)
             (data, current_frame) = self.extract_audio_data(self.data, start_frame, end_frame, current_frame, frame_count)
             self.current_timestamp = librosa.samples_to_time(current_frame, sr=self.sampling_rate) * self.play_rate
             if self.playing:
                 status = pyaudio.paContinue
             else:
                 status = pyaudio.paComplete
-                print("complete")
             return (data, status)
         p = pyaudio.PyAudio()
         stream = p.open(rate=self.sampling_rate, channels=len(self.data.shape), format=pyaudio.paFloat32, output=True, stream_callback=pyaudio_callback)
-        self.current_timestamp = librosa.samples_to_time(current_frame, sr=self.sampling_rate) * self.play_rate
         print("Paused at {}.".format(seconds_to_time_str(self.current_timestamp)))
         while stream.is_active() and self.playing:
             time.sleep(0.05)
@@ -254,7 +224,10 @@ class TranscribeContext:
 def seconds_to_time_str(seconds):
     minutes = seconds // 60
     remaining_seconds = seconds % 60
-    return "{:02,.0f}:{:05,.2f}".format(minutes, remaining_seconds)
+    if minutes > 0:
+        return "{:.0f}:{:05,.2f}".format(minutes, remaining_seconds)
+    else:
+        return "{:05,.2f}".format(remaining_seconds)
 
 def print_help():
     print("")
