@@ -43,6 +43,7 @@ class AudioWaveformView(QGraphicsView):
         self.horizontalScrollBar().setValue(1)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.show()
 
     def zoom_in(self):
@@ -185,10 +186,11 @@ class AudioWaveformScene(QGraphicsScene):
     def create_waveform(self, width, height, audio_data):
         vertical_margin = 0
         effective_height = height - vertical_margin * 2
-        chunks = int(len(audio_data) / 1000)
+        chunks = int(len(audio_data) / 2000)
         chunk_pixel_width = float(width) / chunks
         chunk_sample_width = int(len(audio_data) / chunks)
         items = []
+        pen = QtGui.QPen(Qt.PenStyle.NoPen)
         for chunk in range(0, chunks):
             chunk_start = int(chunk * chunk_sample_width)
             chunk_end = int((chunk + 1) * chunk_sample_width)
@@ -203,8 +205,8 @@ class AudioWaveformScene(QGraphicsScene):
             rms_line_height = effective_height * rms / 1.0
             rms_line_start = vertical_margin + (effective_height - rms_line_height) / 2
             chunk_pixel_start = chunk * chunk_pixel_width
-            items.append(self.addRect(chunk_pixel_start, max_line_start, chunk_pixel_width, max_line_height, Qt.GlobalColor.blue, Qt.GlobalColor.blue))
-            items.append(self.addRect(chunk_pixel_start, rms_line_start, chunk_pixel_width, rms_line_height, Qt.GlobalColor.darkBlue, Qt.GlobalColor.darkBlue))
+            items.append(self.addRect(chunk_pixel_start, max_line_start, chunk_pixel_width, max_line_height, pen, Qt.GlobalColor.blue))
+            items.append(self.addRect(chunk_pixel_start, rms_line_start, chunk_pixel_width, rms_line_height, pen, Qt.GlobalColor.darkBlue))
         waveform = self.createItemGroup(items)
         return waveform
 

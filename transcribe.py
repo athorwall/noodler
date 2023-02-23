@@ -132,6 +132,8 @@ class TranscribeContext:
         self.playing = False
 
     def play(self):
+        if self.playing:
+            return
         t = Thread(target=self.play_internal, args=[])
         t.start()
 
@@ -141,6 +143,10 @@ class TranscribeContext:
         def pyaudio_callback(in_data, frame_count, time_info, status):
             nonlocal self, current_frame
             start_frame = librosa.time_to_samples(self.start_timestamp / self.play_rate, sr=self.sampling_rate)
+            if current_frame < start_frame:
+                # a bit hacky, we can't have other classes write to current_frame while music is playing
+                # but we want to ensure that it's updated if e.g. the loop shifts
+                current_frame = start_frame
             end_frame = librosa.time_to_samples(self.end_timestamp / self.play_rate, sr=self.sampling_rate)
             (data, current_frame) = self.extract_audio_data(self.data, start_frame, end_frame, current_frame, frame_count)
             self.current_timestamp = librosa.samples_to_time(current_frame, sr=self.sampling_rate) * self.play_rate
@@ -151,8 +157,7 @@ class TranscribeContext:
             return (data, status)
         p = pyaudio.PyAudio()
         stream = p.open(rate=self.sampling_rate, channels=len(self.data.shape), format=pyaudio.paFloat32, output=True, stream_callback=pyaudio_callback)
-        print("Paused at {}.".format(seconds_to_time_str(self.current_timestamp)))
-        while stream.is_active() and self.playing:
+        while stream.is_active():
             time.sleep(0.05)
         stream.close()
         p.terminate()

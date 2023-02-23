@@ -1,16 +1,23 @@
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
-    QGraphicsScene,
-    QGraphicsView,
     QInputDialog,
     QMainWindow,
     QWidget,
     QBoxLayout,
+    QDockWidget,
+    QLineEdit,
+    QLabel,
+    QCheckBox,
+    QPushButton,
+    QToolButton,
+    QGridLayout,
+    QFrame,
 )
 from PyQt6.QtCore import (
     Qt, 
     QTimer,
+    QEvent,
 )
 from PyQt6 import QtGui
 import transcribe
@@ -18,15 +25,182 @@ from pytube import YouTube
 import librosa
 import os
 import audio_view
+import events
 
 MUSIC_PATH = "music"
+ICONS_PATH = "icons"
+LEFT_ARROW = "angle-left.png"
+DOUBLE_LEFT_ARROW = "angle-double-left.png"
+RIGHT_ARROW = "angle-right.png"
+DOUBLE_RIGHT_ARROW = "angle-double-right.png"
+PLAY = "play.png"
+PAUSE = "pause.png"
+BACK = "previous.png"
+
+def icon(path):
+    return QtGui.QIcon("icons/{}".format(path))
+
+class NavigationDock(QWidget):
+    def __init__(self, *args, **kargs):
+        super(NavigationDock, self).__init__(*args, **kargs)
+
+        layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+
+        self.selection_widget = SelectionWidget()
+        layout.addWidget(self.selection_widget)
+
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.VLine)
+        sep1.setFrameShadow(QFrame.Shadow.Plain)
+        layout.addWidget(sep1)
+        
+        self.move_by_time_widget = MoveSelectionWidget(1, 10, "s", lambda value: 0)
+        layout.addWidget(self.move_by_time_widget)
+
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.VLine)
+        sep2.setFrameShadow(QFrame.Shadow.Plain)
+        layout.addWidget(sep2)
+
+        self.move_by_proportion_widget = MoveSelectionWidget(50, 80, "%", lambda value: 0)
+        layout.addWidget(self.move_by_proportion_widget)
+
+        layout.addStretch(1)
+
+        self.setLayout(layout)
+
+class PlayControls(QWidget):
+    def __init__(self, *args, **kargs):
+        super(PlayControls, self).__init__(*args, **kargs)
+
+        layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+
+        self.back_button = QToolButton()
+        self.back_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.back_button.setIcon(icon(BACK))
+        self.back_button.clicked.connect(lambda: app.postEvent(window, events.BackEvent()))
+        layout.addWidget(self.back_button)
+
+        self.play_button = QToolButton()
+        self.play_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.play_button.setIcon(icon(PLAY))
+        self.play_button.clicked.connect(lambda: app.postEvent(window, events.PlayEvent()))
+        layout.addWidget(self.play_button)
+
+        self.pause_button = QToolButton()
+        self.pause_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.pause_button.setIcon(icon(PAUSE))
+        self.pause_button.clicked.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        layout.addWidget(self.pause_button)
+
+        self.setLayout(layout)
+
+class SelectionWidget(QWidget):
+    def __init__(self, *args, **kargs):
+        super(SelectionWidget, self).__init__(*args, **kargs)
+
+        layout = QBoxLayout(QBoxLayout.Direction.TopToBottom)
+
+        self.play_controls_widget = PlayControls()
+        layout.addWidget(self.play_controls_widget)
+
+        self.range_selection_widget = RangeSelectionWidget()
+        layout.addWidget(self.range_selection_widget)
+
+        self.loop_checkbox = QCheckBox("Loop")
+        layout.addWidget(self.loop_checkbox)
+
+        self.start_from_beginning_checkbox = QCheckBox("Start from beginning of loop")
+        layout.addWidget(self.start_from_beginning_checkbox)
+
+        self.setLayout(layout)
+
+class MoveSelectionWidget(QWidget):
+    def __init__(self, smaller_value, bigger_value, unit, on_change, *args, **kargs):
+        super(MoveSelectionWidget, self).__init__(*args, **kargs)
+
+        layout = QGridLayout()
+
+        smaller_text = "{}{}".format(smaller_value, unit)
+        bigger_text = "{}{}".format(bigger_value, unit)
+
+        self.double_left_widget = MoveSelectionWidget.tool_button(bigger_text, icon(DOUBLE_LEFT_ARROW))
+        layout.addWidget(self.double_left_widget, 0, 0)
+        self.left_widget = MoveSelectionWidget.tool_button(smaller_text, icon(LEFT_ARROW))
+        layout.addWidget(self.left_widget, 0, 1)
+
+        self.right_widget = MoveSelectionWidget.tool_button(smaller_text, icon(RIGHT_ARROW))
+        layout.addWidget(self.right_widget, 0, 2)
+        self.double_right_widget = MoveSelectionWidget.tool_button(bigger_text, icon(DOUBLE_RIGHT_ARROW))
+        layout.addWidget(self.double_right_widget, 0, 3)
+
+        self.custom_left_widget = QToolButton()
+        self.custom_left_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.custom_left_widget.setIcon(icon(LEFT_ARROW))
+        layout.addWidget(self.custom_left_widget, 1, 0)
+
+        self.custom_shift_widget = QLineEdit("1.0")
+        layout.addWidget(self.custom_shift_widget, 1, 1, 1, 2)
+
+        self.custom_right_widget = QToolButton()
+        self.custom_right_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.custom_right_widget.setIcon(icon(RIGHT_ARROW))
+        layout.addWidget(self.custom_right_widget, 1, 3)
+
+        self.setLayout(layout)
+
+    def tool_button(text, icon):
+        widget = QToolButton()
+        widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        widget.setIcon(icon)
+        widget.setText(text)
+        return widget
+
+class RangeSelectionWidget(QWidget):
+    def __init__(self, *args, **kargs):
+        super(RangeSelectionWidget, self).__init__(*args, **kargs)
+
+        layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.from_widget = QLineEdit()
+        self.from_widget.textEdited.connect(self.on_set_start)
+        self.to_label = QLabel("to")
+        self.to_widget = QLineEdit()
+        self.to_widget.textEdited.connect(self.on_set_end)
+        layout.addWidget(self.from_widget)
+        layout.addWidget(self.to_label)
+        layout.addWidget(self.to_widget)
+
+        self.setLayout(layout)
+        self.setMaximumWidth(250)
+
+    def on_set_start(self, text):
+        # for now only support seconds
+        try:
+            start_second = float(text)
+            end_second = float(self.to_widget.text())
+            event = events.SetLoopEvent(start_second, end_second)
+            app.postEvent(window, event)
+        except ValueError:
+            return
+
+    def on_set_end(self, text):
+        try:
+            start_second = float(self.from_widget.text())
+            end_second = float(text)
+            event = events.SetLoopEvent(start_second, end_second)
+            app.postEvent(window, event)
+        except ValueError:
+            return
+
 
 class MainView(QWidget):
     def __init__(self, audio, *args, **kargs):
         super(MainView, self).__init__(*args, **kargs)
+
         self.audio_view = audio_view.AudioWaveformView(audio, self)
         layout = QBoxLayout(QBoxLayout.Direction.Down)
         layout.addWidget(self.audio_view)
+
         self.setLayout(layout)
 
 class MainWindow(QMainWindow):
@@ -40,6 +214,10 @@ class MainWindow(QMainWindow):
 
         self.resize(800, 600)
         self.setWindowTitle("Noodler")
+
+        self.dock_widget = QDockWidget("Navigation")
+        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.dock_widget)
+        self.dock_widget.setWidget(NavigationDock())
 
         fileMenu = self.menuBar().addMenu("File")
         openAction = fileMenu.addAction("Open...", QtGui.QKeySequence.StandardKey.Open)
@@ -124,9 +302,23 @@ class MainWindow(QMainWindow):
             else:
                 self.audio.play()
         return None
+
+    def customEvent(self, event: QEvent):
+        if event.type() == events.SetLoopEvent.TYPE:
+            return
+        elif event.type() == events.PlayEvent.TYPE:
+            if self.audio != None:
+                self.audio.play()
+            return
+        elif event.type() == events.PauseEvent.TYPE:
+            if self.audio != None:
+                self.audio.stop()
+            return
+        return super().customEvent(event)
  
-app = QApplication([])
-app.setStyle('macos')
-window = MainWindow()
-window.show()
-app.exec()
+if __name__ == '__main__':
+    app = QApplication([])
+    app.setStyle('macos')
+    window = MainWindow()
+    window.show()
+    app.exec()
