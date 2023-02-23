@@ -46,10 +46,25 @@ class AudioWaveformView(QGraphicsView):
         self.show()
 
     def zoom_in(self):
+        current_scroll = self.horizontalScrollBar().value()
+        print(self.width())
+        current_center = current_scroll + self.width() / 2
+        current_width = self.audio_waveform_scene.width()
         self.audio_waveform_scene.zoom_in()
+        new_width = self.audio_waveform_scene.width()
+        new_center = current_center * (new_width / current_width)
+        new_scroll = new_center - self.width() / 2
+        self.horizontalScrollBar().setValue(new_scroll)
 
     def zoom_out(self):
+        current_scroll = self.horizontalScrollBar().value()
+        current_center = current_scroll + self.width() / 2
+        current_width = self.audio_waveform_scene.width()
         self.audio_waveform_scene.zoom_out()
+        new_width = self.audio_waveform_scene.width()
+        new_center = current_center * (new_width / current_width)
+        new_scroll = new_center - self.width() / 2
+        self.horizontalScrollBar().setValue(new_scroll)
 
 class AudioWaveformScene(QGraphicsScene):
     # audio_data must be mono
@@ -73,8 +88,7 @@ class AudioWaveformScene(QGraphicsScene):
 
         self.loop_start = 0.0
         self.loop_end = self.duration
-        self.left_loop_rect = None
-        self.right_loop_rect = None
+        self.loop_rect = None
         self.add_loop_to_scene()
         self.setting_loop = False
 
@@ -134,15 +148,13 @@ class AudioWaveformScene(QGraphicsScene):
     def add_loop_to_scene(self):
         brush = QtGui.QBrush(QtGui.QColor(0, 0, 0, 100))
         pen = QtGui.QPen(QtGui.QColor(0, 0, 0, 100))
-        self.left_loop_rect = self.addRect(0, 0, self.width(), self.height(), pen, brush)
-        self.right_loop_rect = self.addRect(0, 0, self.width(), self.height(), pen, brush)
+        self.loop_rect = self.addRect(0, 0, self.width(), self.height(), pen, brush)
         self.update_loop()
 
     def update_loop(self):
         loop_start_in_px = self.width() * self.loop_start / self.duration
         loop_end_in_px = self.width() * self.loop_end / self.duration
-        self.left_loop_rect.setRect(0, 30, loop_start_in_px, self.total_height - 30)
-        self.right_loop_rect.setRect(loop_end_in_px, 30, self.width() - loop_end_in_px, self.total_height - 30)
+        self.loop_rect.setRect(loop_start_in_px, 30, loop_end_in_px - loop_start_in_px, self.total_height - 30)
         self.update_rect()
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -192,7 +204,7 @@ class AudioWaveformScene(QGraphicsScene):
             rms_line_start = vertical_margin + (effective_height - rms_line_height) / 2
             chunk_pixel_start = chunk * chunk_pixel_width
             items.append(self.addRect(chunk_pixel_start, max_line_start, chunk_pixel_width, max_line_height, Qt.GlobalColor.blue, Qt.GlobalColor.blue))
-            # items.append(self.addRect(chunk_pixel_start, rms_line_start, chunk_pixel_width, rms_line_height, Qt.GlobalColor.darkBlue, Qt.GlobalColor.darkBlue))
+            items.append(self.addRect(chunk_pixel_start, rms_line_start, chunk_pixel_width, rms_line_height, Qt.GlobalColor.darkBlue, Qt.GlobalColor.darkBlue))
         waveform = self.createItemGroup(items)
         return waveform
 

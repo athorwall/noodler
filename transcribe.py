@@ -137,11 +137,11 @@ class TranscribeContext:
 
     def play_internal(self):
         self.playing = True
+        current_frame = librosa.time_to_samples(self.current_timestamp / self.play_rate, sr=self.sampling_rate)
         def pyaudio_callback(in_data, frame_count, time_info, status):
-            nonlocal self
+            nonlocal self, current_frame
             start_frame = librosa.time_to_samples(self.start_timestamp / self.play_rate, sr=self.sampling_rate)
             end_frame = librosa.time_to_samples(self.end_timestamp / self.play_rate, sr=self.sampling_rate)
-            current_frame = librosa.time_to_samples(self.current_timestamp / self.play_rate, sr=self.sampling_rate)
             (data, current_frame) = self.extract_audio_data(self.data, start_frame, end_frame, current_frame, frame_count)
             self.current_timestamp = librosa.samples_to_time(current_frame, sr=self.sampling_rate) * self.play_rate
             if self.playing:

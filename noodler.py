@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QMainWindow,
     QWidget,
+    QBoxLayout,
 )
 from PyQt6.QtCore import (
     Qt, 
@@ -24,6 +25,9 @@ class MainView(QWidget):
     def __init__(self, audio, *args, **kargs):
         super(MainView, self).__init__(*args, **kargs)
         self.audio_view = audio_view.AudioWaveformView(audio, self)
+        layout = QBoxLayout(QBoxLayout.Direction.Down)
+        layout.addWidget(self.audio_view)
+        self.setLayout(layout)
 
 class MainWindow(QMainWindow):
 
@@ -119,7 +123,7 @@ class MainWindow(QMainWindow):
                 self.audio.stop()
             else:
                 self.audio.play()
-        return super().keyPressEvent(a0)
+        return None
  
 app = QApplication([])
 app.setStyle('macos')
