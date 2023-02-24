@@ -26,6 +26,7 @@ import librosa
 import os
 import audio_view
 import events
+import audio
 
 MUSIC_PATH = "music"
 ICONS_PATH = "icons"
@@ -317,6 +318,9 @@ class MainWindow(QMainWindow):
         return super().customEvent(event)
  
 if __name__ == '__main__':
+    audio_player = audio.AudioPlayer()
+    audio_player.start()
+
     app = QApplication([])
     app.setStyle('macos')
     window = MainWindow()
