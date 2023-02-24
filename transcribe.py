@@ -134,8 +134,8 @@ class TranscribeContext:
     def play(self):
         if self.playing:
             return
-        t = Thread(target=self.play_internal, args=[])
-        t.start()
+        #t = Thread(target=self.play_internal, args=[])
+        #t.start()
 
     def play_internal(self):
         self.playing = True

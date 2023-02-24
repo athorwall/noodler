@@ -195,10 +195,10 @@ class RangeSelectionWidget(QWidget):
 
 
 class MainView(QWidget):
-    def __init__(self, audio, *args, **kargs):
+    def __init__(self, audio_player, *args, **kargs):
         super(MainView, self).__init__(*args, **kargs)
 
-        self.audio_view = audio_view.AudioWaveformView(audio, self)
+        self.audio_view = audio_view.AudioWaveformView(audio_player, self)
         layout = QBoxLayout(QBoxLayout.Direction.Down)
         layout.addWidget(self.audio_view)
 
@@ -206,11 +206,13 @@ class MainView(QWidget):
 
 class MainWindow(QMainWindow):
 
-    def __init__(self):
+    def __init__(self, audio_player: audio.AudioPlayer):
         super().__init__()
 
+        self.audio_player = audio_player
+        self.audio_data = None
+
         self.main_view = None
-        self.audio = None
         self.key_pressed = dict()
 
         self.resize(800, 600)
@@ -238,27 +240,31 @@ class MainWindow(QMainWindow):
         self.timer.start(15)
         self.timer.timeout.connect(self.handle_key_presses)
 
+        self.setFocus()
+
     def is_key_pressed(self, key):
         return key in self.key_pressed and self.key_pressed[key]
 
     def handle_key_presses(self):
-        if self.audio != None:
-            if self.is_key_pressed(Qt.Key.Key_D) and self.audio.current_timestamp < self.audio.end_timestamp:
-                if self.is_key_pressed(Qt.Key.Key_Shift):
-                    self.audio.current_timestamp += 0.5
-                else:
-                    self.audio.current_timestamp += 0.05
-            if self.is_key_pressed(Qt.Key.Key_A) and self.audio.current_timestamp > self.audio.start_timestamp:
-                if self.is_key_pressed(Qt.Key.Key_Shift):
-                    self.audio.current_timestamp -= 0.5
-                else:
-                    self.audio.current_timestamp -= 0.05
+        if self.audio_player.ready and not self.audio_player.playing:
 
-        if self.main_view != None:
-            if self.is_key_pressed(Qt.Key.Key_E):
-                self.main_view.audio_view.audio_waveform_scene.shift_loop(0.05)
-            if self.is_key_pressed(Qt.Key.Key_Q):
-                self.main_view.audio_view.audio_waveform_scene.shift_loop(-0.05)
+            if self.is_key_pressed(Qt.Key.Key_D):
+                if self.is_key_pressed(Qt.Key.Key_Shift):
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.5)
+                else:
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.05)
+
+            if self.is_key_pressed(Qt.Key.Key_A):
+                if self.is_key_pressed(Qt.Key.Key_Shift):
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.5)
+                else:
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.05)
+
+            if self.main_view != None:
+                if self.is_key_pressed(Qt.Key.Key_E):
+                    self.main_view.audio_view.audio_waveform_scene.shift_loop(0.05)
+                if self.is_key_pressed(Qt.Key.Key_Q):
+                    self.main_view.audio_view.audio_waveform_scene.shift_loop(-0.05)
 
     def open(self):
         (path, result) = QFileDialog.getOpenFileName(None, "Open Audio File", "music", "Audio Files (*.mp4)");
@@ -277,8 +283,8 @@ class MainWindow(QMainWindow):
 
     def load(self, path):
         data, sampling_rate = librosa.load(path, sr=None, mono=False)
-        self.audio = transcribe.TranscribeContext(os.path.basename(path), data, sampling_rate, lambda: 0)
-        self.main_view = MainView(self.audio, self)
+        self.audio_player.set_audio_state(data, sampling_rate, 1.0)
+        self.main_view = MainView(self.audio_player, self)
         self.zoomInAction.triggered.connect(self.main_view.audio_view.zoom_in)
         self.zoomOutAction.triggered.connect(self.main_view.audio_view.zoom_out)
         self.setCentralWidget(self.main_view)
@@ -298,22 +304,20 @@ class MainWindow(QMainWindow):
         if self.audio == None:
             return super().keyPressEvent(a0)
         if a0.key() == Qt.Key.Key_Space:
-            if self.audio.playing:
-                self.audio.stop()
+            if self.audio_player.playing:
+                self.audio_player.stop()
             else:
-                self.audio.play()
+                self.audio_player.play()
         return None
 
     def customEvent(self, event: QEvent):
         if event.type() == events.SetLoopEvent.TYPE:
             return
         elif event.type() == events.PlayEvent.TYPE:
-            if self.audio != None:
-                self.audio.play()
+            self.audio_player.play()
             return
         elif event.type() == events.PauseEvent.TYPE:
-            if self.audio != None:
-                self.audio.stop()
+            self.audio_player.stop()
             return
         return super().customEvent(event)
  
@@ -323,6 +327,6 @@ if __name__ == '__main__':
 
     app = QApplication([])
     app.setStyle('macos')
-    window = MainWindow()
+    window = MainWindow(audio_player)
     window.show()
     app.exec()

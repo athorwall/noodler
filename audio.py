@@ -3,6 +3,8 @@ import queue
 import librosa
 import pyaudio
 import numpy
+from threading import Thread
+import time
 
 # Audio is played in a separate process to ensure that playback is not impacted
 # by the UI. If audio is played from the same process as the UI, certain expensive operations
@@ -13,9 +15,9 @@ class AudioState:
     def __init__(self, data = None, sampling_rate = None, play_rate = None):
         # This object can get quite big. If that's a problem, we'll instead transmit the filename.
         # In that case, the audio process will need to be responsible for modifications, e.g. play rate.
-        self.data = None
-        self.sampling_rate = None
-        self.play_rate = None
+        self.data = data 
+        self.sampling_rate = sampling_rate
+        self.play_rate = play_rate
 
 class PlayAudioCommand:
     TYPE = "play"
@@ -25,26 +27,26 @@ class PlayAudioCommand:
         self.end_timestamp = end_timestamp
         self.current_timestamp = current_timestamp
 
-    def type():
+    def type(self):
         return PlayAudioCommand.TYPE
 
 class StopAudioCommand:
     TYPE = "stop"
 
-    def type():
+    def type(self):
         return StopAudioCommand.TYPE
 
 class RestartAudioCommand:
     TYPE = "restart"
 
-    def type():
+    def type(self):
         return RestartAudioCommand.TYPE
 
 # PlaybackState is the state of active audio playback which can be sent from the audio process back to the GUI process
 # for UI purposes.
 class PlaybackState:
-    def __init__(self):
-        self.timestamp = None
+    def __init__(self, timestamp):
+        self.timestamp = timestamp
 
 class AudioPlayer:
 
@@ -62,17 +64,67 @@ class AudioPlayer:
         # playback timestamp.
         self.playback_state_queue = Queue()
 
+        # These values are set by the GUI process, and will eventually be propagated to the audio process.
+        # There's no guarantee that these values are the same values currently being used by the audio
+        # process. 
+        self.audio_state = None
+        self.start_timestamp = None
+        self.end_timestamp = None
+
+        # This value can be set by the GUI process. Its value will be propagated to the audio process when audio playback begins.
+        # While audio playback is occurring, this value will be updated by the audio process.
+        self.current_timestamp = None
+
+        self.ready = False
+        self.playing = False
+
     def start(self):
         p = Process(target=audio_process, args=(self.audio_state_queue, self.audio_command_queue, self.playback_state_queue))
         p.start()
 
-    def set_audio_state(self, data, sampling_rate, play_rate):
-        self.audio_state_queue.put(AudioState(data, sampling_rate, play_rate))
+        t = Thread(target=self._playback_state_worker, args=[])
+        t.start()
 
-    def play(self, start_timestamp, end_timestamp, current_timestamp):
-        self.audio_command_queue.put(PlayAudioCommand(start_timestamp, end_timestamp, current_timestamp))
+    def _playback_state_worker(self):
+        playback_state = get_if_present(self.playback_state_queue)
+        if playback_state != None:
+            self.current_timestamp = playback_state.timestamp
+        time.sleep(0.02)
+
+    def set_audio_state(self, data, sampling_rate, play_rate):
+        self.audio_state = AudioState(data, sampling_rate, play_rate)
+        self.start_timestamp = 0.0
+        self.end_timestamp = librosa.get_duration(data, sampling_rate)
+        self.current_timestamp = 0.0
+        self.ready = True
+        self.audio_state_queue.put(self.audio_state)
+
+    def set_start_timestamp(self, start_timestamp):
+        self.start_timestamp = start_timestamp
+        self._clamp_current_timestamp()
+
+    def set_end_timestamp(self, end_timestamp):
+        self.end_timestamp = end_timestamp
+        self._clamp_current_timestamp()
+
+    def set_current_timestamp(self, current_timestamp):
+        self.current_timestamp = current_timestamp
+        self._clamp_current_timestamp()
+
+    def _clamp_current_timestamp(self):
+        if self.current_timestamp < self.start_timestamp:
+            self.current_timestamp = self.end_timestamp
+        if self.current_timestamp > self.end_timestamp:
+            self.current_timestamp = self.end_timestamp
+
+    def play(self):
+        # These should probably be synchronized in some way, but it will be safe as long as 
+        # AudioPlayer is only accessed from a single thread.
+        self.playing = True
+        self.audio_command_queue.put(PlayAudioCommand(self.start_timestamp, self.end_timestamp, self.current_timestamp))
 
     def stop(self):
+        self.playing = False
         self.audio_command_queue.put(StopAudioCommand())
 
     def restart(self):
@@ -81,7 +133,7 @@ class AudioPlayer:
 def audio_process(audio_state_queue: Queue, audio_command_queue: Queue, playback_state_queue: Queue):
 
     stream = None
-    audio_state = AudioState()
+    audio_state = None
 
     p = pyaudio.PyAudio()
     while True:
@@ -93,12 +145,20 @@ def audio_process(audio_state_queue: Queue, audio_command_queue: Queue, playback
             command = get_if_present(audio_command_queue)
             if command is not None:
                 if command.type() == PlayAudioCommand.TYPE and audio_state is not None:
-                    stream = play_internal(p, audio_state)
+                    print("Received play command")
+                    stream = play_internal(
+                        p, 
+                        playback_state_queue, 
+                        command.start_timestamp, 
+                        command.end_timestamp, 
+                        command.current_timestamp, 
+                        audio_state,
+                    )
             update = get_if_present(audio_state_queue)
             if update is not None:
+                print("Received updated audio state")
                 audio_state = update
     p.terminate()
-
 
 def get_if_present(q):
     try:
@@ -106,7 +166,7 @@ def get_if_present(q):
     except queue.Empty:
         return None
 
-def play_internal(p, start_timestamp, end_timestamp, current_timestamp, audio_state):
+def play_internal(p, playback_queue, start_timestamp, end_timestamp, current_timestamp, audio_state):
     current_frame = librosa.time_to_samples(current_timestamp / audio_state.play_rate, sr=audio_state.sampling_rate)
     def pyaudio_callback(in_data, frame_count, time_info, status):
         nonlocal audio_state, start_timestamp, end_timestamp, current_timestamp, current_frame
@@ -116,8 +176,10 @@ def play_internal(p, start_timestamp, end_timestamp, current_timestamp, audio_st
             # but we want to ensure that it's updated if e.g. the loop shifts
             current_frame = start_frame
         end_frame = librosa.time_to_samples(end_timestamp / audio_state.play_rate, sr=audio_state.sampling_rate)
-        (data, current_frame) = audio_state.extract_audio_data(audio_state.data, start_frame, end_frame, current_frame, frame_count)
+        (data, current_frame) = extract_audio_data(audio_state.data, start_frame, end_frame, current_frame, frame_count)
         current_timestamp = librosa.samples_to_time(current_frame, sr=audio_state.sampling_rate) * audio_state.play_rate
+        if playback_queue.empty():
+            playback_queue.put(PlaybackState(current_timestamp))
         status = pyaudio.paContinue
         return (data, status)
     stream = p.open(rate=audio_state.sampling_rate, channels=len(audio_state.data.shape), format=pyaudio.paFloat32, output=True, stream_callback=pyaudio_callback)

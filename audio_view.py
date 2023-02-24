@@ -48,7 +48,6 @@ class AudioWaveformView(QGraphicsView):
 
     def zoom_in(self):
         current_scroll = self.horizontalScrollBar().value()
-        print(self.width())
         current_center = current_scroll + self.width() / 2
         current_width = self.audio_waveform_scene.width()
         self.audio_waveform_scene.zoom_in()
