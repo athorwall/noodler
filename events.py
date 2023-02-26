@@ -5,8 +5,8 @@ from PyQt6.QtCore import (
 class SetLoopEvent(QEvent):
     TYPE = QEvent.registerEventType()
 
-    def __init__(self, start, end, *args, **kargs):
-        super(SetLoopEvent, self).__init__(SetLoopEvent.TYPE, *args, **kargs)
+    def __init__(self, start, end):
+        super(SetLoopEvent, self).__init__(SetLoopEvent.TYPE)
 
         self.start = start
         self.end = end
@@ -16,6 +16,17 @@ class SetLoopEvent(QEvent):
 
     def get_end(self):
         return self.end
+
+class SetLoopConfiguration(QEvent):
+    TYPE = QEvent.registerEventType()
+
+    def __init__(self, enable_loop):
+        super(SetLoopConfiguration, self).__init__(SetLoopConfiguration.TYPE)
+
+        self.enable_loop = enable_loop
+
+    def get_loop_enabled(self):
+        return self.enable_loop
 
 class PlayEvent(QEvent):
     TYPE = QEvent.registerEventType()

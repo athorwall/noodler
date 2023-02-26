@@ -22,14 +22,23 @@ def seconds_to_time_str(seconds):
 # - bars, e.g. "5 bars"
 # - beats, e.g. "10 beats"
 # A duration with no units is considered to be in seconds already.
-def get_duration_in_seconds(duration):
-    numerical_prefix = ""
-    i = 0
-    while i < len(duration) and ((duration[i] >= '0' and duration[i] <= '9') or duration[i] == '.' or duration[i] == '-'):
-        numerical_prefix += duration[i]
-        i += 1
-    qty = float(numerical_prefix)
-    units = duration[i:].strip()
-    if units == "" or units == "s" or units == "sec" or units == "seconds":
-        return qty
-
+# def get_duration_in_seconds(duration):
+#     numerical_prefix = ""
+#     i = 0
+#     while i < len(duration) and ((duration[i] >= '0' and duration[i] <= '9') or duration[i] == '.' or duration[i] == '-'):
+#         numerical_prefix += duration[i]
+#         i += 1
+#     qty = float(numerical_prefix)
+#     units = duration[i:].strip()
+#     if units == "" or units == "s" or units == "sec" or units == "seconds":
+#         return qty
+#     if units == "beats":
+#         if self.tempo == None:
+#             print("Can't specify duration in beats because tempo is not configured.")
+#         return 60 * qty / self.tempo
+#     if units == "bars":
+#         if self.tempo == None or self.time == None:
+#             print("Can't specify duration in bars unless tempo and time are both configured.")
+#         return 60 * self.time * qty / self.tempo
+# 
+# 

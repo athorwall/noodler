@@ -22,10 +22,11 @@ class AudioState:
 class PlayAudioCommand:
     TYPE = "play"
 
-    def __init__(self, start_timestamp, end_timestamp, current_timestamp):
+    def __init__(self, start_timestamp, end_timestamp, current_timestamp, loop = True):
         self.start_timestamp = start_timestamp
         self.end_timestamp = end_timestamp
         self.current_timestamp = current_timestamp
+        self.loop = loop
 
     def type(self):
         return PlayAudioCommand.TYPE
@@ -77,6 +78,7 @@ class AudioPlayer:
 
         self.ready = False
         self.playing = False
+        self.loop = True
 
     def start(self):
         p = Process(target=audio_process, args=(self.audio_state_queue, self.audio_command_queue, self.playback_state_queue))
@@ -112,6 +114,9 @@ class AudioPlayer:
         self.current_timestamp = current_timestamp
         self._clamp_current_timestamp()
 
+    def set_loop(self, loop):
+        self.loop = loop
+
     def _clamp_current_timestamp(self):
         if self.current_timestamp < self.start_timestamp:
             self.current_timestamp = self.start_timestamp
@@ -122,7 +127,7 @@ class AudioPlayer:
         # These should probably be synchronized in some way, but it will be safe as long as 
         # AudioPlayer is only accessed from a single thread.
         self.playing = True
-        self.audio_command_queue.put(PlayAudioCommand(self.start_timestamp, self.end_timestamp, self.current_timestamp))
+        self.audio_command_queue.put(PlayAudioCommand(self.start_timestamp, self.end_timestamp, self.current_timestamp, self.loop))
 
     def stop(self):
         self.playing = False
@@ -143,22 +148,31 @@ def audio_process(audio_state_queue: Queue, audio_command_queue: Queue, playback
             if command.type() == StopAudioCommand.TYPE:
                 stream.close()
                 stream = None
+            if command.type() == RestartAudioCommand.TYPE:
+                stream.close()
+                stream = play_internal(
+                    p, 
+                    playback_state_queue, 
+                    command.start_timestamp, 
+                    command.end_timestamp, 
+                    command.current_timestamp, 
+                    audio_state,
+                )
         else:
             command = get_if_present(audio_command_queue)
-            if command is not None:
-                if command.type() == PlayAudioCommand.TYPE and audio_state is not None:
-                    print("Received play command")
+            if command is not None and audio_state is not None:
+                if command.type() == PlayAudioCommand.TYPE:
                     stream = play_internal(
                         p, 
                         playback_state_queue, 
                         command.start_timestamp, 
                         command.end_timestamp, 
                         command.current_timestamp, 
+                        command.loop,
                         audio_state,
                     )
             update = get_if_present(audio_state_queue)
             if update is not None:
-                print("Received updated audio state")
                 audio_state = update
     p.terminate()
 
@@ -168,7 +182,7 @@ def get_if_present(q):
     except queue.Empty:
         return None
 
-def play_internal(p, playback_queue, start_timestamp, end_timestamp, current_timestamp, audio_state):
+def play_internal(p, playback_queue, start_timestamp, end_timestamp, current_timestamp, loop, audio_state):
     current_frame = librosa.time_to_samples(current_timestamp / audio_state.play_rate, sr=audio_state.sampling_rate)
     def pyaudio_callback(in_data, frame_count, time_info, status):
         nonlocal audio_state, start_timestamp, end_timestamp, current_timestamp, current_frame
@@ -178,7 +192,7 @@ def play_internal(p, playback_queue, start_timestamp, end_timestamp, current_tim
             # but we want to ensure that it's updated if e.g. the loop shifts
             current_frame = start_frame
         end_frame = librosa.time_to_samples(end_timestamp / audio_state.play_rate, sr=audio_state.sampling_rate)
-        (data, current_frame) = extract_audio_data(audio_state.data, start_frame, end_frame, current_frame, frame_count)
+        (data, current_frame) = extract_audio_data(audio_state.data, start_frame, end_frame, current_frame, frame_count, loop)
         current_timestamp = librosa.samples_to_time(current_frame, sr=audio_state.sampling_rate) * audio_state.play_rate
         if playback_queue.empty():
             playback_queue.put(PlaybackState(current_timestamp))
@@ -187,23 +201,27 @@ def play_internal(p, playback_queue, start_timestamp, end_timestamp, current_tim
     stream = p.open(rate=audio_state.sampling_rate, channels=len(audio_state.data.shape), format=pyaudio.paFloat32, output=True, stream_callback=pyaudio_callback)
     return stream
 
-def extract_audio_data(data, start_frame, end_frame, current_frame, frame_count):
+def extract_audio_data(data, start_frame, end_frame, current_frame, frame_count, loop):
     if len(data.shape) == 1:
-        return extract_audio_data_mono(data, start_frame, end_frame, current_frame, frame_count)
+        return extract_audio_data_mono(data, start_frame, end_frame, current_frame, frame_count, loop)
     else:
-        (left, _) = extract_audio_data_mono(data[0], start_frame, end_frame, current_frame, frame_count)
-        (right, current_frame) = extract_audio_data_mono(data[1], start_frame, end_frame, current_frame, frame_count)
+        (left, _) = extract_audio_data_mono(data[0], start_frame, end_frame, current_frame, frame_count, loop)
+        (right, current_frame) = extract_audio_data_mono(data[1], start_frame, end_frame, current_frame, frame_count, loop)
         result = numpy.empty((left.size + right.size,), dtype=left.dtype)
         result[0::2] = left
         result[1::2] = right
         return (result, current_frame)
 
-def extract_audio_data_mono(data, start_frame, end_frame, current_frame, frame_count):
+def extract_audio_data_mono(data, start_frame, end_frame, current_frame, frame_count, loop):
     new_start_frame = current_frame + frame_count
     extracted_data = []
     if end_frame != None and new_start_frame > end_frame:
-        extracted_data = numpy.concatenate((data[current_frame:], data[start_frame:(start_frame + new_start_frame - end_frame)]))
-        current_frame = start_frame + new_start_frame - end_frame
+        if loop:
+            extracted_data = numpy.concatenate((data[current_frame:end_frame], data[start_frame:(start_frame + new_start_frame - end_frame)]))
+            current_frame = start_frame + new_start_frame - end_frame
+        else:
+            extracted_data = data[current_frame:end_frame]
+            current_frame = end_frame
     else:
         extracted_data = data[current_frame:new_start_frame]
         current_frame += frame_count

@@ -10,10 +10,8 @@ from PyQt6.QtCore import (
     QTimer,
 )
 from PyQt6 import QtGui
-import transcribe
 import librosa
 import math
-import transcribe
 import audio
 import utils
 
@@ -107,7 +105,10 @@ class AudioWaveformScene(QGraphicsScene):
 
     def set_timestamp(self, timestamp):
         self.timestamp = timestamp
-        new_pos = self.width() * timestamp / self.duration
+        self.update_timestamp()
+
+    def update_timestamp(self):
+        new_pos = self.width() * self.timestamp / self.duration
         self.timestamp_cursor.setPos(new_pos, 0.0)
         # a bit dirty...while audio is playing, the current timestamp is controlled
         # by the audio player, and read by the GUI. When audio is not playing, the current
@@ -132,6 +133,7 @@ class AudioWaveformScene(QGraphicsScene):
         self.timeline = self.create_timeline(self.width(), 30, self.duration)
 
         self.update_loop()
+        self.update_timestamp()
 
     def update_rect(self):
         self.setSceneRect(0, 0, self.waveform.boundingRect().width() * self.scale, self.total_height)

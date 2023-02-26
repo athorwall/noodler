@@ -20,7 +20,6 @@ from PyQt6.QtCore import (
     QEvent,
 )
 from PyQt6 import QtGui
-import transcribe
 from pytube import YouTube
 import librosa
 import os
@@ -111,11 +110,20 @@ class SelectionWidget(QWidget):
 
         self.loop_checkbox = QCheckBox("Loop")
         layout.addWidget(self.loop_checkbox)
+        self.loop_checkbox.setChecked(True)
+        self.loop_checkbox.stateChanged.connect(self.on_set_loop_changed)
 
         self.start_from_beginning_checkbox = QCheckBox("Start from beginning of loop")
         layout.addWidget(self.start_from_beginning_checkbox)
 
         self.setLayout(layout)
+
+    def on_set_loop_changed(self, state):
+        enabled = False
+        if state == Qt.CheckState.Checked:
+            enabled = True
+        event = events.SetLoopConfiguration(enabled)
+        app.postEvent(window, event)
 
 class MoveSelectionWidget(QWidget):
     def __init__(self, smaller_value, bigger_value, unit, on_change, *args, **kargs):
@@ -226,7 +234,6 @@ class MainView(QWidget):
 
         self.setLayout(layout)
 
-
     def show_audio(self, on_loop_change):
         while self.layout().count() > 0:
             self.layout().takeAt(0)
@@ -257,7 +264,8 @@ class MainWindow(QMainWindow):
 
         self.dock_widget = QDockWidget("Navigation")
         self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.dock_widget)
-        self.dock_widget.setWidget(NavigationDock())
+        self.navigation_widget = NavigationDock()
+        self.dock_widget.setWidget(self.navigation_widget)
 
         fileMenu = self.menuBar().addMenu("File")
         self.openAction = fileMenu.addAction("Open...", QtGui.QKeySequence.StandardKey.Open)
@@ -353,9 +361,9 @@ class MainWindow(QMainWindow):
             return super().keyPressEvent(a0)
         if a0.key() == Qt.Key.Key_Space:
             if self.audio_player.playing:
-                self.audio_player.stop()
+                app.postEvent(self, events.PauseEvent())
             else:
-                self.audio_player.play()
+                app.postEvent(self, events.PlayEvent())
         return None
 
     def customEvent(self, event: QEvent):
@@ -364,11 +372,21 @@ class MainWindow(QMainWindow):
                 self.main_view.audio_view.audio_waveform_scene.set_loop(event.get_start(), event.get_end())
             return
         elif event.type() == events.PlayEvent.TYPE:
+            if self.navigation_widget.selection_widget.start_from_beginning_checkbox.isChecked():
+                self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
             self.audio_player.play()
             return
         elif event.type() == events.PauseEvent.TYPE:
             self.audio_player.stop()
             return
+        elif event.type() == events.BackEvent.TYPE:
+            if self.audio_player.playing:
+                self.audio_player.stop()
+                self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
+                self.audio_player.play()
+            self.main_view.audio_view.audio_waveform_scene.set_timestamp(self.main_view.audio_view.audio_waveform_scene.loop_start)
+        elif event.type() == events.SetLoopConfiguration.TYPE:
+            self.audio_player.set_loop(event.get_loop_enabled())
         return super().customEvent(event)
  
 if __name__ == '__main__':
