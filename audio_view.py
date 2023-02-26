@@ -1,44 +1,31 @@
 from PyQt6.QtWidgets import (
-    QApplication,
-    QFileDialog,
     QFrame,
     QGraphicsScene,
     QGraphicsSceneMouseEvent,
     QGraphicsView,
-    QInputDialog,
-    QMainWindow,
-    QLineEdit,
-    QLabel,
-    QWidget,
-    QPushButton,
-    QDockWidget,
-    QBoxLayout,
-    QGraphicsTransform,
     QGraphicsScale,
 )
 from PyQt6.QtCore import (
     Qt, 
     QTimer,
-    QByteArray,
 )
 from PyQt6 import QtGui
 import transcribe
-from pytube import YouTube
 import librosa
-import os
 import math
-import threading
 import transcribe
+import audio
+import utils
 
 class AudioWaveformView(QGraphicsView):
     # audio_data must be mono
-    def __init__(self, audio, *args, **kargs):
+    def __init__(self, audio_player, on_loop_change, *args, **kargs):
         super(AudioWaveformView, self).__init__(*args, **kargs)
-        self.audio_waveform_scene = AudioWaveformScene(audio)
+        self.audio_player = audio_player
+
+        self.audio_waveform_scene = AudioWaveformScene(audio_player, on_loop_change)
         self.setScene(self.audio_waveform_scene)
-        self.audio = audio
-        self.duration = librosa.get_duration(audio.data, sr=audio.sampling_rate)
-        self.timestamp = 0.0
+
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.horizontalScrollBar().setValue(1)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -47,50 +34,53 @@ class AudioWaveformView(QGraphicsView):
         self.show()
 
     def zoom_in(self):
-        current_scroll = self.horizontalScrollBar().value()
-        current_center = current_scroll + self.width() / 2
-        current_width = self.audio_waveform_scene.width()
-        self.audio_waveform_scene.zoom_in()
-        new_width = self.audio_waveform_scene.width()
-        new_center = current_center * (new_width / current_width)
-        new_scroll = new_center - self.width() / 2
-        self.horizontalScrollBar().setValue(new_scroll)
+        self.zoom(1.2)
 
     def zoom_out(self):
-        current_scroll = self.horizontalScrollBar().value()
-        current_center = current_scroll + self.width() / 2
+        self.zoom(1 / 1.2)
+
+    def zoom(self, factor):
+        current_center = self.horizontalScrollBar().value() + self.width() / 2
         current_width = self.audio_waveform_scene.width()
-        self.audio_waveform_scene.zoom_out()
+        self.audio_waveform_scene.zoom(factor)
         new_width = self.audio_waveform_scene.width()
         new_center = current_center * (new_width / current_width)
         new_scroll = new_center - self.width() / 2
         self.horizontalScrollBar().setValue(new_scroll)
 
+    def set_timestamp(self, timestamp):
+        self.audio_waveform_scene.set_timestamp(timestamp)
+
 class AudioWaveformScene(QGraphicsScene):
-    # audio_data must be mono
-    def __init__(self, audio, *args, **kargs):
+    def __init__(self, audio_player: audio.AudioPlayer, on_loop_change, *args, **kargs):
         super(AudioWaveformScene, self).__init__(*args, **kargs)
         self.setBackgroundBrush(Qt.GlobalColor.gray)
-        self.audio = audio
+        self.audio_player = audio_player
+        self.data = librosa.to_mono(audio_player.audio_state.data)
         self.total_height = 180
         self.waveform_height = 150
         self.scale = 1.0
-        self.duration = librosa.get_duration(audio.data, sr=audio.sampling_rate)
+        self.duration = librosa.get_duration(self.data, sr=audio_player.audio_state.sampling_rate)
         self.timestamp = 0.0
-        self.waveform = self.create_waveform(1200, self.waveform_height, librosa.to_mono(audio.data))
+        self.waveform = self.create_waveform(1200, self.waveform_height, self.data)
         self.waveform.setY(30)
         self.timeline = self.create_timeline(1200, 30, self.duration)
         self.add_cursor_to_scene()
-        self.timer = QTimer()
-        self.timer.start(50)
-        # ideally only do this when playing the music
-        self.timer.timeout.connect(self.update_timestamp)
 
         self.loop_start = 0.0
         self.loop_end = self.duration
         self.loop_rect = None
         self.add_loop_to_scene()
         self.setting_loop = False
+        self.on_loop_change = on_loop_change
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.on_timeout)
+        self.timer.start(15)
+
+    def on_timeout(self):
+        if self.audio_player.playing:
+            self.set_timestamp(self.audio_player.current_timestamp)
 
     def shift_loop(self, amount):
         loop_width = self.loop_end - self.loop_start
@@ -104,17 +94,29 @@ class AudioWaveformScene(QGraphicsScene):
             if self.loop_start < 0.0:
                 self.loop_start = 0.0
             self.loop_end = self.loop_start + loop_width
-        # should consolidate this
-        self.audio.set_start(self.loop_start)
-        self.audio.set_end(self.loop_end)
+        if self.on_loop_change is not None:
+            self.on_loop_change(self.loop_start, self.loop_end)
         self.update_loop()
-        self.update_timestamp()
 
-    def zoom_in(self):
-        self.scale_waveform(self.scale * 1.2)
+    def set_loop(self, start, end):
+        self.loop_start = start
+        self.loop_end = end
+        if self.on_loop_change is not None:
+            self.on_loop_change(self.loop_start, self.loop_end)
+        self.update_loop()
 
-    def zoom_out(self):
-        self.scale_waveform(self.scale / 1.2)
+    def set_timestamp(self, timestamp):
+        self.timestamp = timestamp
+        new_pos = self.width() * timestamp / self.duration
+        self.timestamp_cursor.setPos(new_pos, 0.0)
+        # a bit dirty...while audio is playing, the current timestamp is controlled
+        # by the audio player, and read by the GUI. When audio is not playing, the current
+        # timestamp is controlled by the GUI and read by the audio player.
+        if not self.audio_player.playing:
+            self.audio_player.set_current_timestamp(self.timestamp)
+
+    def zoom(self, factor):
+        self.scale_waveform(self.scale * factor) 
 
     def scale_waveform(self, scale):
         self.scale = scale
@@ -130,14 +132,9 @@ class AudioWaveformScene(QGraphicsScene):
         self.timeline = self.create_timeline(self.width(), 30, self.duration)
 
         self.update_loop()
-        self.update_timestamp()
 
     def update_rect(self):
         self.setSceneRect(0, 0, self.waveform.boundingRect().width() * self.scale, self.total_height)
-
-    def update_timestamp(self) -> bool:
-        timestamp = self.audio.current_timestamp
-        self.timestamp_cursor.setPos(self.width() * timestamp / self.duration, 0.0)
 
     # should add at x = 0
     def add_cursor_to_scene(self):
@@ -158,17 +155,20 @@ class AudioWaveformScene(QGraphicsScene):
         self.update_rect()
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        self.audio.stop()
-        timestamp = self.duration * event.scenePos().x() / self.width()
-        self.setting_loop = True
-        self.loop_start = timestamp
-        self.loop_end = timestamp
-        self.audio.set_start(self.loop_start)
-        self.update_loop()
+        if not self.audio_player.playing:
+            timestamp = self.duration * event.scenePos().x() / self.width()
+            self.setting_loop = True
+            self.loop_start = timestamp
+            self.loop_end = timestamp
+            self.update_loop()
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self.setting_loop = False
+        if self.timestamp < self.loop_start or self.timestamp > self.loop_end:
+            self.set_timestamp(self.loop_start)
+        if self.on_loop_change is not None:
+            self.on_loop_change(self.loop_start, self.loop_end)
         return super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
@@ -177,7 +177,6 @@ class AudioWaveformScene(QGraphicsScene):
             if timestamp < self.loop_start:
                 timestamp = self.loop_start
             self.loop_end = timestamp
-            self.audio.set_end(self.loop_end)
             self.update_loop()
         # capture the move event for efficiency
         return None
@@ -224,7 +223,7 @@ class AudioWaveformScene(QGraphicsScene):
             x = width * second / duration
             if ms % bigger_tick == 0:
                 tick = self.addLine(x, 0, x, height - 2, Qt.GlobalColor.black)
-                time_str = transcribe.seconds_to_time_str(second)
+                time_str = utils.seconds_to_time_str(second)
                 font = QtGui.QFont("Courier New", 9)
                 text = self.addText(time_str, font)
                 text.setDefaultTextColor(Qt.GlobalColor.black)

@@ -86,10 +86,11 @@ class AudioPlayer:
         t.start()
 
     def _playback_state_worker(self):
-        playback_state = get_if_present(self.playback_state_queue)
-        if playback_state != None:
-            self.current_timestamp = playback_state.timestamp
-        time.sleep(0.02)
+        while True:
+            playback_state = get_if_present(self.playback_state_queue)
+            if playback_state != None:
+                self.current_timestamp = playback_state.timestamp
+            time.sleep(0.02)
 
     def set_audio_state(self, data, sampling_rate, play_rate):
         self.audio_state = AudioState(data, sampling_rate, play_rate)
@@ -113,7 +114,7 @@ class AudioPlayer:
 
     def _clamp_current_timestamp(self):
         if self.current_timestamp < self.start_timestamp:
-            self.current_timestamp = self.end_timestamp
+            self.current_timestamp = self.start_timestamp
         if self.current_timestamp > self.end_timestamp:
             self.current_timestamp = self.end_timestamp
 
@@ -137,10 +138,11 @@ def audio_process(audio_state_queue: Queue, audio_command_queue: Queue, playback
 
     p = pyaudio.PyAudio()
     while True:
-        if stream is not None and stream.is_active():
+        if stream is not None:
             command = audio_command_queue.get()
             if command.type() == StopAudioCommand.TYPE:
                 stream.close()
+                stream = None
         else:
             command = get_if_present(audio_command_queue)
             if command is not None:

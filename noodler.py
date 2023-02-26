@@ -27,6 +27,7 @@ import os
 import audio_view
 import events
 import audio
+import utils
 
 MUSIC_PATH = "music"
 ICONS_PATH = "icons"
@@ -162,11 +163,17 @@ class RangeSelectionWidget(QWidget):
         super(RangeSelectionWidget, self).__init__(*args, **kargs)
 
         layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+
         self.from_widget = QLineEdit()
         self.from_widget.textEdited.connect(self.on_set_start)
+
         self.to_label = QLabel("to")
         self.to_widget = QLineEdit()
         self.to_widget.textEdited.connect(self.on_set_end)
+
+        self.from_widget.returnPressed.connect(lambda: self.to_widget.setFocus())
+        self.to_widget.returnPressed.connect(lambda: window.setFocus())
+
         layout.addWidget(self.from_widget)
         layout.addWidget(self.to_label)
         layout.addWidget(self.to_widget)
@@ -176,9 +183,12 @@ class RangeSelectionWidget(QWidget):
 
     def on_set_start(self, text):
         # for now only support seconds
+
         try:
-            start_second = float(text)
-            end_second = float(self.to_widget.text())
+            start_second = utils.get_duration_in_seconds(text)
+            end_second = utils.get_duration_in_seconds(self.to_widget.text())
+            if end_second < start_second:
+                end_second = start_second
             event = events.SetLoopEvent(start_second, end_second)
             app.postEvent(window, event)
         except ValueError:
@@ -186,8 +196,10 @@ class RangeSelectionWidget(QWidget):
 
     def on_set_end(self, text):
         try:
-            start_second = float(self.from_widget.text())
-            end_second = float(text)
+            start_second = utils.get_duration_in_seconds(self.from_widget.text())
+            end_second = utils.get_duration_in_seconds(text)
+            if end_second < start_second:
+                end_second = start_second
             event = events.SetLoopEvent(start_second, end_second)
             app.postEvent(window, event)
         except ValueError:
@@ -195,14 +207,39 @@ class RangeSelectionWidget(QWidget):
 
 
 class MainView(QWidget):
-    def __init__(self, audio_player, *args, **kargs):
+    def __init__(self, audio_player, open_action, import_action, *args, **kargs):
         super(MainView, self).__init__(*args, **kargs)
 
-        self.audio_view = audio_view.AudioWaveformView(audio_player, self)
+        self.audio_view = None
+        self.audio_player = audio_player
         layout = QBoxLayout(QBoxLayout.Direction.Down)
-        layout.addWidget(self.audio_view)
+
+        self.open_button = QPushButton("Open...")
+        self.open_button.clicked.connect(open_action.trigger)
+
+        self.import_button = QPushButton("Import from YouTube...")
+        self.import_button.clicked.connect(import_action.trigger)
+
+        layout.addWidget(self.open_button)
+        layout.addWidget(self.import_button)
+        layout.addStretch(1)
 
         self.setLayout(layout)
+
+
+    def show_audio(self, on_loop_change):
+        while self.layout().count() > 0:
+            self.layout().takeAt(0)
+        self.audio_view = audio_view.AudioWaveformView(audio_player, on_loop_change, self)
+        self.layout().addWidget(self.audio_view)
+
+    def zoom_in(self):
+        if self.audio_view != None:
+            self.audio_view.zoom_in()
+
+    def zoom_out(self):
+        if self.audio_view != None:
+            self.audio_view.zoom_out()
 
 class MainWindow(QMainWindow):
 
@@ -223,10 +260,11 @@ class MainWindow(QMainWindow):
         self.dock_widget.setWidget(NavigationDock())
 
         fileMenu = self.menuBar().addMenu("File")
-        openAction = fileMenu.addAction("Open...", QtGui.QKeySequence.StandardKey.Open)
-        openAction.triggered.connect(self.open)
-        importAction = fileMenu.addAction("Import From YouTube...", QtGui.QKeySequence("Ctrl+Y"))
-        importAction.triggered.connect(self.import_from_youtube)
+        self.openAction = fileMenu.addAction("Open...", QtGui.QKeySequence.StandardKey.Open)
+        self.openAction.triggered.connect(self.open)
+        self.importAction = fileMenu.addAction("Import From YouTube...", QtGui.QKeySequence("Ctrl+Y"))
+
+        self.importAction.triggered.connect(self.import_from_youtube)
 
         viewMenu = self.menuBar().addMenu("View")
         self.zoomInAction = viewMenu.addAction("Zoom In", QtGui.QKeySequence.StandardKey.ZoomIn)
@@ -240,6 +278,11 @@ class MainWindow(QMainWindow):
         self.timer.start(15)
         self.timer.timeout.connect(self.handle_key_presses)
 
+        self.main_view = MainView(self.audio_player, self.openAction, self.importAction, self)
+        self.zoomInAction.triggered.connect(self.main_view.zoom_in)
+        self.zoomOutAction.triggered.connect(self.main_view.zoom_out)
+        self.setCentralWidget(self.main_view)
+
         self.setFocus()
 
     def is_key_pressed(self, key):
@@ -250,15 +293,19 @@ class MainWindow(QMainWindow):
 
             if self.is_key_pressed(Qt.Key.Key_D):
                 if self.is_key_pressed(Qt.Key.Key_Shift):
-                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.5)
+                    self.main_view.audio_view.audio_waveform_scene.set_timestamp(
+                        self.main_view.audio_view.audio_waveform_scene.timestamp + 0.5)
                 else:
-                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.05)
+                    self.main_view.audio_view.audio_waveform_scene.set_timestamp(
+                        self.main_view.audio_view.audio_waveform_scene.timestamp + 0.05)
 
             if self.is_key_pressed(Qt.Key.Key_A):
                 if self.is_key_pressed(Qt.Key.Key_Shift):
-                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.5)
+                    self.main_view.audio_view.audio_waveform_scene.set_timestamp(
+                        self.main_view.audio_view.audio_waveform_scene.timestamp - 0.5)
                 else:
-                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.05)
+                    self.main_view.audio_view.audio_waveform_scene.set_timestamp(
+                        self.main_view.audio_view.audio_waveform_scene.timestamp - 0.05)
 
             if self.main_view != None:
                 if self.is_key_pressed(Qt.Key.Key_E):
@@ -284,11 +331,13 @@ class MainWindow(QMainWindow):
     def load(self, path):
         data, sampling_rate = librosa.load(path, sr=None, mono=False)
         self.audio_player.set_audio_state(data, sampling_rate, 1.0)
-        self.main_view = MainView(self.audio_player, self)
-        self.zoomInAction.triggered.connect(self.main_view.audio_view.zoom_in)
-        self.zoomOutAction.triggered.connect(self.main_view.audio_view.zoom_out)
-        self.setCentralWidget(self.main_view)
+        self.main_view.show_audio(self.on_loop_change)
 
+    def on_loop_change(self, loop_start, loop_end):
+        self.audio_player.set_start_timestamp(loop_start)
+        self.audio_player.set_end_timestamp(loop_end)
+
+    # TODO: not working right now
     def set_playback_rate(self):
         (rate, _) = QInputDialog.getDouble(None, "Set Playback Rate", "Rate", value=1.0)
         # todo: handle the waiting period gracefully
@@ -300,8 +349,7 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, a0: QtGui.QKeyEvent) -> None:
         self.key_pressed[a0.key()] = True
-        # bad
-        if self.audio == None:
+        if not self.audio_player.ready:
             return super().keyPressEvent(a0)
         if a0.key() == Qt.Key.Key_Space:
             if self.audio_player.playing:
@@ -312,6 +360,8 @@ class MainWindow(QMainWindow):
 
     def customEvent(self, event: QEvent):
         if event.type() == events.SetLoopEvent.TYPE:
+            if not self.audio_player.playing and self.main_view.audio_view is not None:
+                self.main_view.audio_view.audio_waveform_scene.set_loop(event.get_start(), event.get_end())
             return
         elif event.type() == events.PlayEvent.TYPE:
             self.audio_player.play()
