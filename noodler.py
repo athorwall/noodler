@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QGridLayout,
     QFrame,
+    QDoubleSpinBox,
 )
 from PyQt6.QtCore import (
     Qt, 
@@ -55,7 +56,7 @@ class NavigationDock(QWidget):
         sep1.setFrameShadow(QFrame.Shadow.Plain)
         layout.addWidget(sep1)
         
-        self.move_by_time_widget = MoveSelectionWidget(1, 10, "s", lambda value: 0)
+        self.move_by_time_widget = MoveSelectionWidget(1, 10, "s", lambda amount: app.postEvent(window, events.ShiftLoopEvent(amount)))
         layout.addWidget(self.move_by_time_widget)
 
         sep2 = QFrame()
@@ -63,12 +64,19 @@ class NavigationDock(QWidget):
         sep2.setFrameShadow(QFrame.Shadow.Plain)
         layout.addWidget(sep2)
 
-        self.move_by_proportion_widget = MoveSelectionWidget(50, 80, "%", lambda value: 0)
+        self.move_by_proportion_widget = MoveSelectionWidget(50, 80, "%", self.on_shift_by_percent)
         layout.addWidget(self.move_by_proportion_widget)
 
         layout.addStretch(1)
 
         self.setLayout(layout)
+
+    def on_shift_by_percent(self, percent):
+        print(percent)
+        if window.main_view.audio_view is not None:
+            width = window.main_view.audio_view.audio_waveform_scene.loop_end - window.main_view.audio_view.audio_waveform_scene.loop_start
+            amount = width * percent / 100.0
+            app.postEvent(window, events.ShiftLoopEvent(amount))
 
 class PlayControls(QWidget):
     def __init__(self, *args, **kargs):
@@ -129,32 +137,43 @@ class MoveSelectionWidget(QWidget):
     def __init__(self, smaller_value, bigger_value, unit, on_change, *args, **kargs):
         super(MoveSelectionWidget, self).__init__(*args, **kargs)
 
+        self.on_change = on_change
+
         layout = QGridLayout()
 
         smaller_text = "{}{}".format(smaller_value, unit)
         bigger_text = "{}{}".format(bigger_value, unit)
 
         self.double_left_widget = MoveSelectionWidget.tool_button(bigger_text, icon(DOUBLE_LEFT_ARROW))
+        self.double_left_widget.clicked.connect(lambda: on_change(-bigger_value))
         layout.addWidget(self.double_left_widget, 0, 0)
         self.left_widget = MoveSelectionWidget.tool_button(smaller_text, icon(LEFT_ARROW))
+        self.left_widget.clicked.connect(lambda: on_change(-smaller_value))
         layout.addWidget(self.left_widget, 0, 1)
 
         self.right_widget = MoveSelectionWidget.tool_button(smaller_text, icon(RIGHT_ARROW))
+        self.right_widget.clicked.connect(lambda: on_change(smaller_value))
         layout.addWidget(self.right_widget, 0, 2)
         self.double_right_widget = MoveSelectionWidget.tool_button(bigger_text, icon(DOUBLE_RIGHT_ARROW))
+        self.double_right_widget.clicked.connect(lambda: on_change(bigger_value))
         layout.addWidget(self.double_right_widget, 0, 3)
+
+        self.custom_shift_widget = QDoubleSpinBox()
+        self.custom_shift_widget.setSuffix(unit)
+        self.custom_shift_widget.setValue(smaller_value)
+        self.custom_shift_widget.setMaximum(1000.0)
+        layout.addWidget(self.custom_shift_widget, 1, 1, 1, 2)
 
         self.custom_left_widget = QToolButton()
         self.custom_left_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.custom_left_widget.setIcon(icon(LEFT_ARROW))
+        self.custom_left_widget.clicked.connect(lambda: on_change(-self.custom_shift_widget.value()))
         layout.addWidget(self.custom_left_widget, 1, 0)
-
-        self.custom_shift_widget = QLineEdit("1.0")
-        layout.addWidget(self.custom_shift_widget, 1, 1, 1, 2)
 
         self.custom_right_widget = QToolButton()
         self.custom_right_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.custom_right_widget.setIcon(icon(RIGHT_ARROW))
+        self.custom_right_widget.clicked.connect(lambda: on_change(self.custom_shift_widget.value()))
         layout.addWidget(self.custom_right_widget, 1, 3)
 
         self.setLayout(layout)
@@ -366,6 +385,11 @@ class MainWindow(QMainWindow):
         if event.type() == events.SetLoopEvent.TYPE:
             if not self.audio_player.playing and self.main_view.audio_view is not None:
                 self.main_view.audio_view.audio_waveform_scene.set_loop(event.get_start(), event.get_end())
+            return
+
+        elif event.type() == events.ShiftLoopEvent.TYPE:
+            if not self.audio_player.playing and self.main_view.audio_view is not None:
+                self.main_view.audio_view.audio_waveform_scene.shift_loop(event.get_amount())
             return
         elif event.type() == events.PlayEvent.TYPE:
             if self.navigation_widget.selection_widget.start_from_beginning_checkbox.isChecked():

@@ -17,6 +17,17 @@ class SetLoopEvent(QEvent):
     def get_end(self):
         return self.end
 
+class ShiftLoopEvent(QEvent):
+    TYPE = QEvent.registerEventType()
+
+    def __init__(self, amount):
+        super(ShiftLoopEvent, self).__init__(ShiftLoopEvent.TYPE)
+
+        self.amount = amount
+
+    def get_amount(self):
+        return self.amount
+
 class SetLoopConfiguration(QEvent):
     TYPE = QEvent.registerEventType()
 
