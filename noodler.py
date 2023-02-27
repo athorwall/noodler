@@ -120,7 +120,7 @@ class SelectionWidget(QWidget):
 
     def on_set_loop_changed(self, state):
         enabled = False
-        if state == Qt.CheckState.Checked:
+        if state == Qt.CheckState.Checked.value:
             enabled = True
         event = events.SetLoopConfiguration(enabled)
         app.postEvent(window, event)
@@ -301,19 +301,15 @@ class MainWindow(QMainWindow):
 
             if self.is_key_pressed(Qt.Key.Key_D):
                 if self.is_key_pressed(Qt.Key.Key_Shift):
-                    self.main_view.audio_view.audio_waveform_scene.set_timestamp(
-                        self.main_view.audio_view.audio_waveform_scene.timestamp + 0.5)
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.5)
                 else:
-                    self.main_view.audio_view.audio_waveform_scene.set_timestamp(
-                        self.main_view.audio_view.audio_waveform_scene.timestamp + 0.05)
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.05)
 
             if self.is_key_pressed(Qt.Key.Key_A):
                 if self.is_key_pressed(Qt.Key.Key_Shift):
-                    self.main_view.audio_view.audio_waveform_scene.set_timestamp(
-                        self.main_view.audio_view.audio_waveform_scene.timestamp - 0.5)
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.5)
                 else:
-                    self.main_view.audio_view.audio_waveform_scene.set_timestamp(
-                        self.main_view.audio_view.audio_waveform_scene.timestamp - 0.05)
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.05)
 
             if self.main_view != None:
                 if self.is_key_pressed(Qt.Key.Key_E):
@@ -384,7 +380,8 @@ class MainWindow(QMainWindow):
                 self.audio_player.stop()
                 self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
                 self.audio_player.play()
-            self.main_view.audio_view.audio_waveform_scene.set_timestamp(self.main_view.audio_view.audio_waveform_scene.loop_start)
+            else:
+                self.audio_player.set_current_timestamp(self.main_view.audio_view.audio_waveform_scene.loop_start)
         elif event.type() == events.SetLoopConfiguration.TYPE:
             self.audio_player.set_loop(event.get_loop_enabled())
         return super().customEvent(event)

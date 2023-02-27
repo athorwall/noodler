@@ -77,8 +77,7 @@ class AudioWaveformScene(QGraphicsScene):
         self.timer.start(15)
 
     def on_timeout(self):
-        if self.audio_player.playing:
-            self.set_timestamp(self.audio_player.current_timestamp)
+        self.set_timestamp(self.audio_player.current_timestamp)
 
     def shift_loop(self, amount):
         loop_width = self.loop_end - self.loop_start
@@ -147,6 +146,7 @@ class AudioWaveformScene(QGraphicsScene):
     def add_loop_to_scene(self):
         brush = QtGui.QBrush(QtGui.QColor(0, 0, 0, 100))
         pen = QtGui.QPen(QtGui.QColor(0, 0, 0, 100))
+        pen.setStyle(Qt.PenStyle.NoPen)
         self.loop_rect = self.addRect(0, 0, self.width(), self.height(), pen, brush)
         self.update_loop()
 
@@ -168,7 +168,7 @@ class AudioWaveformScene(QGraphicsScene):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self.setting_loop = False
         if self.timestamp < self.loop_start or self.timestamp > self.loop_end:
-            self.set_timestamp(self.loop_start)
+            self.audio_player.set_current_timestamp(self.loop_start)
         if self.on_loop_change is not None:
             self.on_loop_change(self.loop_start, self.loop_end)
         return super().mouseReleaseEvent(event)
@@ -211,7 +211,7 @@ class AudioWaveformScene(QGraphicsScene):
         return waveform
 
     def create_timeline(self, width, height, duration):
-        line = self.addLine(0.0, height - 2, width, height - 2, Qt.GlobalColor.black)
+        line = self.addLine(0.0, height, width, height, Qt.GlobalColor.black)
         # handle case where no resolution works?
         # ms
         possible_resolutions = [10, 100, 1000, 5000, 20000, 600000, 300000]
@@ -224,7 +224,7 @@ class AudioWaveformScene(QGraphicsScene):
             second = ms / 1000
             x = width * second / duration
             if ms % bigger_tick == 0:
-                tick = self.addLine(x, 0, x, height - 2, Qt.GlobalColor.black)
+                tick = self.addLine(x, 0, x, height, Qt.GlobalColor.black)
                 time_str = utils.seconds_to_time_str(second)
                 font = QtGui.QFont("Courier New", 9)
                 text = self.addText(time_str, font)
@@ -232,7 +232,7 @@ class AudioWaveformScene(QGraphicsScene):
                 text.setPos(x, height - 28)
                 text.setParentItem(line)
             else:
-                tick = self.addLine(x, height - 6, x, height - 2, Qt.GlobalColor.black)
+                tick = self.addLine(x, height - 6, x, height, Qt.GlobalColor.black)
             tick.setParentItem(line)
             ms += smaller_tick
         return line

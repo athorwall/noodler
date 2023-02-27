@@ -46,8 +46,12 @@ class RestartAudioCommand:
 # PlaybackState is the state of active audio playback which can be sent from the audio process back to the GUI process
 # for UI purposes.
 class PlaybackState:
-    def __init__(self, timestamp):
+    def __init__(self, timestamp, playing):
         self.timestamp = timestamp
+
+        # This is needed so that the audio process can communicate that audio has stopped playing, e.g.
+        # when it reaches the end of the loop but looping is disabled.
+        self.playing = playing
 
 class AudioPlayer:
 
@@ -91,6 +95,8 @@ class AudioPlayer:
         while True:
             playback_state = get_if_present(self.playback_state_queue)
             if playback_state != None:
+                if self.playing and not playback_state.playing:
+                    self.playing = False
                 self.current_timestamp = playback_state.timestamp
             time.sleep(0.02)
 
@@ -143,37 +149,36 @@ def audio_process(audio_state_queue: Queue, audio_command_queue: Queue, playback
 
     p = pyaudio.PyAudio()
     while True:
-        if stream is not None:
-            command = audio_command_queue.get()
+        command = get_if_present(audio_command_queue)
+        if command is not None and audio_state is not None:
             if command.type() == StopAudioCommand.TYPE:
-                stream.close()
-                stream = None
+                if stream is not None:
+                    stream.close()
+                    stream = None
             if command.type() == RestartAudioCommand.TYPE:
-                stream.close()
-                stream = play_internal(
-                    p, 
-                    playback_state_queue, 
-                    command.start_timestamp, 
-                    command.end_timestamp, 
-                    command.current_timestamp, 
-                    audio_state,
-                )
-        else:
-            command = get_if_present(audio_command_queue)
-            if command is not None and audio_state is not None:
-                if command.type() == PlayAudioCommand.TYPE:
+                if stream is not None:
+                    stream.close()
                     stream = play_internal(
                         p, 
                         playback_state_queue, 
                         command.start_timestamp, 
                         command.end_timestamp, 
                         command.current_timestamp, 
-                        command.loop,
                         audio_state,
                     )
-            update = get_if_present(audio_state_queue)
-            if update is not None:
-                audio_state = update
+            if command.type() == PlayAudioCommand.TYPE:
+                stream = play_internal(
+                    p, 
+                    playback_state_queue, 
+                    command.start_timestamp, 
+                    command.end_timestamp, 
+                    command.current_timestamp, 
+                    command.loop,
+                    audio_state,
+                )
+        update = get_if_present(audio_state_queue)
+        if update is not None:
+            audio_state = update
     p.terminate()
 
 def get_if_present(q):
@@ -194,8 +199,10 @@ def play_internal(p, playback_queue, start_timestamp, end_timestamp, current_tim
         end_frame = librosa.time_to_samples(end_timestamp / audio_state.play_rate, sr=audio_state.sampling_rate)
         (data, current_frame) = extract_audio_data(audio_state.data, start_frame, end_frame, current_frame, frame_count, loop)
         current_timestamp = librosa.samples_to_time(current_frame, sr=audio_state.sampling_rate) * audio_state.play_rate
-        if playback_queue.empty():
-            playback_queue.put(PlaybackState(current_timestamp))
+        if current_frame >= end_frame:
+            playback_queue.put(PlaybackState(start_timestamp, False))
+        elif playback_queue.empty():
+            playback_queue.put(PlaybackState(current_timestamp, True))
         status = pyaudio.paContinue
         return (data, status)
     stream = p.open(rate=audio_state.sampling_rate, channels=len(audio_state.data.shape), format=pyaudio.paFloat32, output=True, stream_callback=pyaudio_callback)
