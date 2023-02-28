@@ -17,11 +17,11 @@ import utils
 
 class AudioWaveformView(QGraphicsView):
     # audio_data must be mono
-    def __init__(self, audio_player, on_loop_change, *args, **kargs):
+    def __init__(self, audio_data, audio_player, on_loop_change, *args, **kargs):
         super(AudioWaveformView, self).__init__(*args, **kargs)
         self.audio_player = audio_player
 
-        self.audio_waveform_scene = AudioWaveformScene(audio_player, on_loop_change)
+        self.audio_waveform_scene = AudioWaveformScene(audio_data, audio_player, on_loop_change)
         self.setScene(self.audio_waveform_scene)
 
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -50,11 +50,11 @@ class AudioWaveformView(QGraphicsView):
         self.audio_waveform_scene.set_timestamp(timestamp)
 
 class AudioWaveformScene(QGraphicsScene):
-    def __init__(self, audio_player: audio.AudioPlayer, on_loop_change, *args, **kargs):
+    def __init__(self, audio_data, audio_player: audio.AudioPlayer, on_loop_change, *args, **kargs):
         super(AudioWaveformScene, self).__init__(*args, **kargs)
         self.setBackgroundBrush(Qt.GlobalColor.gray)
         self.audio_player = audio_player
-        self.data = librosa.to_mono(audio_player.audio_state.data)
+        self.data = librosa.to_mono(audio_data)
         self.total_height = 180
         self.waveform_height = 150
         self.scale = 1.0

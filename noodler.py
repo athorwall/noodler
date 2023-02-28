@@ -72,7 +72,6 @@ class NavigationDock(QWidget):
         self.setLayout(layout)
 
     def on_shift_by_percent(self, percent):
-        print(percent)
         if window.main_view.audio_view is not None:
             width = window.main_view.audio_view.audio_waveform_scene.loop_end - window.main_view.audio_view.audio_waveform_scene.loop_start
             amount = width * percent / 100.0
@@ -253,10 +252,10 @@ class MainView(QWidget):
 
         self.setLayout(layout)
 
-    def show_audio(self, on_loop_change):
+    def show_audio(self, audio_data, on_loop_change):
         while self.layout().count() > 0:
             self.layout().takeAt(0)
-        self.audio_view = audio_view.AudioWaveformView(audio_player, on_loop_change, self)
+        self.audio_view = audio_view.AudioWaveformView(audio_data, audio_player, on_loop_change, self)
         self.layout().addWidget(self.audio_view)
 
     def zoom_in(self):
@@ -352,9 +351,9 @@ class MainWindow(QMainWindow):
         self.load(path)
 
     def load(self, path):
-        data, sampling_rate = librosa.load(path, sr=None, mono=False)
-        self.audio_player.set_audio_state(data, sampling_rate, 1.0)
-        self.main_view.show_audio(self.on_loop_change)
+        self.audio_data, sampling_rate = librosa.load(path, sr=None, mono=False)
+        self.audio_player.set_audio_state(self.audio_data, sampling_rate, 1.0)
+        self.main_view.show_audio(self.audio_data, self.on_loop_change)
 
     def on_loop_change(self, loop_start, loop_end):
         self.audio_player.set_start_timestamp(loop_start)
@@ -364,7 +363,8 @@ class MainWindow(QMainWindow):
     def set_playback_rate(self):
         (rate, _) = QInputDialog.getDouble(None, "Set Playback Rate", "Rate", value=1.0)
         # todo: handle the waiting period gracefully
-        self.audio.set_rate(rate)
+        new_data = librosa.effects.time_stretch(self.audio_data, rate)
+        self.audio_player.set_audio_state(new_data, self.audio_player.audio_state.sampling_rate, rate)
 
     def keyReleaseEvent(self, a0: QtGui.QKeyEvent) -> None:
         self.key_pressed[a0.key()] = False 
