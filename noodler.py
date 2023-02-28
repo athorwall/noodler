@@ -31,13 +31,6 @@ import utils
 
 MUSIC_PATH = "music"
 ICONS_PATH = "icons"
-LEFT_ARROW = "angle-left.png"
-DOUBLE_LEFT_ARROW = "angle-double-left.png"
-RIGHT_ARROW = "angle-right.png"
-DOUBLE_RIGHT_ARROW = "angle-double-right.png"
-PLAY = "play.png"
-PAUSE = "pause.png"
-BACK = "previous.png"
 
 def icon(path):
     return QtGui.QIcon("icons/{}".format(path))
@@ -85,19 +78,19 @@ class PlayControls(QWidget):
 
         self.back_button = QToolButton()
         self.back_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.back_button.setIcon(icon(BACK))
+        self.back_button.setText("Back")
         self.back_button.clicked.connect(lambda: app.postEvent(window, events.BackEvent()))
         layout.addWidget(self.back_button)
 
         self.play_button = QToolButton()
         self.play_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.play_button.setIcon(icon(PLAY))
+        self.play_button.setText("Play")
         self.play_button.clicked.connect(lambda: app.postEvent(window, events.PlayEvent()))
         layout.addWidget(self.play_button)
 
         self.pause_button = QToolButton()
         self.pause_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.pause_button.setIcon(icon(PAUSE))
+        self.pause_button.setText("Pause")
         self.pause_button.clicked.connect(lambda: app.postEvent(window, events.PauseEvent()))
         layout.addWidget(self.pause_button)
 
@@ -143,17 +136,17 @@ class MoveSelectionWidget(QWidget):
         smaller_text = "{}{}".format(smaller_value, unit)
         bigger_text = "{}{}".format(bigger_value, unit)
 
-        self.double_left_widget = MoveSelectionWidget.tool_button(bigger_text, icon(DOUBLE_LEFT_ARROW))
+        self.double_left_widget = MoveSelectionWidget.tool_button("Back " + bigger_text)
         self.double_left_widget.clicked.connect(lambda: on_change(-bigger_value))
         layout.addWidget(self.double_left_widget, 0, 0)
-        self.left_widget = MoveSelectionWidget.tool_button(smaller_text, icon(LEFT_ARROW))
+        self.left_widget = MoveSelectionWidget.tool_button("Back " + smaller_text)
         self.left_widget.clicked.connect(lambda: on_change(-smaller_value))
         layout.addWidget(self.left_widget, 0, 1)
 
-        self.right_widget = MoveSelectionWidget.tool_button(smaller_text, icon(RIGHT_ARROW))
+        self.right_widget = MoveSelectionWidget.tool_button("Forward " + smaller_text)
         self.right_widget.clicked.connect(lambda: on_change(smaller_value))
         layout.addWidget(self.right_widget, 0, 2)
-        self.double_right_widget = MoveSelectionWidget.tool_button(bigger_text, icon(DOUBLE_RIGHT_ARROW))
+        self.double_right_widget = MoveSelectionWidget.tool_button("Forward " + bigger_text)
         self.double_right_widget.clicked.connect(lambda: on_change(bigger_value))
         layout.addWidget(self.double_right_widget, 0, 3)
 
@@ -165,22 +158,21 @@ class MoveSelectionWidget(QWidget):
 
         self.custom_left_widget = QToolButton()
         self.custom_left_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.custom_left_widget.setIcon(icon(LEFT_ARROW))
+        self.custom_left_widget.setText("Back")
         self.custom_left_widget.clicked.connect(lambda: on_change(-self.custom_shift_widget.value()))
         layout.addWidget(self.custom_left_widget, 1, 0)
 
         self.custom_right_widget = QToolButton()
         self.custom_right_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.custom_right_widget.setIcon(icon(RIGHT_ARROW))
+        self.custom_right_widget.setText("Forward")
         self.custom_right_widget.clicked.connect(lambda: on_change(self.custom_shift_widget.value()))
         layout.addWidget(self.custom_right_widget, 1, 3)
 
         self.setLayout(layout)
 
-    def tool_button(text, icon):
+    def tool_button(text):
         widget = QToolButton()
         widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        widget.setIcon(icon)
         widget.setText(text)
         return widget
 
