@@ -222,7 +222,7 @@ def extract_audio_data(data, start_frame, end_frame, current_frame, frame_count,
 def extract_audio_data_mono(data, start_frame, end_frame, current_frame, frame_count, loop):
     new_start_frame = current_frame + frame_count
     extracted_data = []
-    if end_frame != None and new_start_frame > end_frame:
+    if end_frame != None and new_start_frame >= end_frame:
         if loop:
             extracted_data = numpy.concatenate((data[current_frame:end_frame], data[start_frame:(start_frame + new_start_frame - end_frame)]))
             current_frame = start_frame + new_start_frame - end_frame

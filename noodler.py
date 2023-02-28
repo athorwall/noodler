@@ -371,9 +371,10 @@ class MainWindow(QMainWindow):
                 self.main_view.audio_view.audio_waveform_scene.shift_loop(event.get_amount())
             return
         elif event.type() == events.PlayEvent.TYPE:
-            if self.navigation_widget.selection_widget.start_from_beginning_checkbox.isChecked():
-                self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
-            self.audio_player.play()
+            if not self.audio_player.playing:
+                if self.navigation_widget.selection_widget.start_from_beginning_checkbox.isChecked():
+                    self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
+                self.audio_player.play()
             return
         elif event.type() == events.PauseEvent.TYPE:
             self.audio_player.stop()
