@@ -347,7 +347,7 @@ class MainWindow(QMainWindow):
             return
         if not os.path.exists("music"):
             os.makedirs("music")
-        path = YouTube(url).streams.filter(only_audio = True).first().download(output_path="music")
+        path = YouTube(url).streams.filter(file_extension='mp4').get_highest_resolution().download(output_path="music")
         self.load(path)
 
     def load(self, path):
