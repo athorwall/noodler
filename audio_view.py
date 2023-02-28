@@ -76,6 +76,7 @@ class AudioWaveformScene(QGraphicsScene):
         self.timer.timeout.connect(self.on_timeout)
         self.timer.start(15)
 
+
     def on_timeout(self):
         self.set_timestamp(self.audio_player.current_timestamp)
 
@@ -157,7 +158,7 @@ class AudioWaveformScene(QGraphicsScene):
         self.update_rect()
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        if not self.audio_player.playing:
+        if event.modifiers() == Qt.KeyboardModifier.ShiftModifier and not self.audio_player.playing:
             timestamp = self.duration * event.scenePos().x() / self.width()
             self.setting_loop = True
             self.loop_start = timestamp
