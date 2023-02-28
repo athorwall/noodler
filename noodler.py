@@ -183,14 +183,12 @@ class RangeSelectionWidget(QWidget):
         layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
 
         self.from_widget = QLineEdit()
-        self.from_widget.textEdited.connect(self.on_set_start)
 
         self.to_label = QLabel("to")
         self.to_widget = QLineEdit()
-        self.to_widget.textEdited.connect(self.on_set_end)
 
         self.from_widget.returnPressed.connect(lambda: self.to_widget.setFocus())
-        self.to_widget.returnPressed.connect(lambda: window.setFocus())
+        self.to_widget.returnPressed.connect(self.on_submit)
 
         layout.addWidget(self.from_widget)
         layout.addWidget(self.to_label)
@@ -199,30 +197,17 @@ class RangeSelectionWidget(QWidget):
         self.setLayout(layout)
         self.setMaximumWidth(250)
 
-    def on_set_start(self, text):
-        # for now only support seconds
-
+    def on_submit(self):
         try:
-            start_second = utils.get_duration_in_seconds(text)
+            start_second = utils.get_duration_in_seconds(self.from_widget.text())
             end_second = utils.get_duration_in_seconds(self.to_widget.text())
             if end_second < start_second:
                 end_second = start_second
             event = events.SetLoopEvent(start_second, end_second)
             app.postEvent(window, event)
+            window.setFocus()
         except ValueError:
             return
-
-    def on_set_end(self, text):
-        try:
-            start_second = utils.get_duration_in_seconds(self.from_widget.text())
-            end_second = utils.get_duration_in_seconds(text)
-            if end_second < start_second:
-                end_second = start_second
-            event = events.SetLoopEvent(start_second, end_second)
-            app.postEvent(window, event)
-        except ValueError:
-            return
-
 
 class MainView(QWidget):
     def __init__(self, audio_player, open_action, import_action, *args, **kargs):
@@ -350,6 +335,8 @@ class MainWindow(QMainWindow):
     def on_loop_change(self, loop_start, loop_end):
         self.audio_player.set_start_timestamp(loop_start)
         self.audio_player.set_end_timestamp(loop_end)
+        self.navigation_widget.selection_widget.range_selection_widget.from_widget.setText(utils.seconds_to_time_str(loop_start))
+        self.navigation_widget.selection_widget.range_selection_widget.to_widget.setText(utils.seconds_to_time_str(loop_end))
 
     # TODO: not working right now
     def set_playback_rate(self):

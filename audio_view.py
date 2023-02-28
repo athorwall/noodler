@@ -31,6 +31,10 @@ class AudioWaveformView(QGraphicsView):
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.show()
 
+        self.dragging = False
+        self.dragging_initial_mouse_x = 0.0
+        self.dragging_initial_scroll_x = 0.0
+
     def zoom_in(self):
         self.zoom(1.2)
 
@@ -48,6 +52,24 @@ class AudioWaveformView(QGraphicsView):
 
     def set_timestamp(self, timestamp):
         self.audio_waveform_scene.set_timestamp(timestamp)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier != Qt.KeyboardModifier.ShiftModifier:
+            self.dragging = True
+            self.dragging_initial_mouse_x = event.pos().x()
+            self.dragging_initial_scroll_x = self.horizontalScrollBar().value()
+        return super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self.dragging:
+            new_mouse_x = event.pos().x()
+            new_scroll_x = self.dragging_initial_scroll_x - (new_mouse_x - self.dragging_initial_mouse_x)
+            self.horizontalScrollBar().setValue(new_scroll_x)
+        return super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        self.dragging = False
+        return super().mouseReleaseEvent(event)
 
 class AudioWaveformScene(QGraphicsScene):
     def __init__(self, audio_data, audio_player: audio.AudioPlayer, on_loop_change, *args, **kargs):
@@ -69,8 +91,12 @@ class AudioWaveformScene(QGraphicsScene):
         self.loop_end = self.duration
         self.loop_rect = None
         self.add_loop_to_scene()
+
         self.setting_loop = False
         self.on_loop_change = on_loop_change
+
+        self.placing_cursor = False
+        self.placing_cursor_initial_x = 0.0
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.on_timeout)
@@ -164,6 +190,9 @@ class AudioWaveformScene(QGraphicsScene):
             self.loop_start = timestamp
             self.loop_end = timestamp
             self.update_loop()
+        else:
+            self.placing_cursor = True
+            self.placing_cursor_initial_x = event.screenPos().x()
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -172,6 +201,13 @@ class AudioWaveformScene(QGraphicsScene):
             self.audio_player.set_current_timestamp(self.loop_start)
         if self.on_loop_change is not None:
             self.on_loop_change(self.loop_start, self.loop_end)
+
+        if self.placing_cursor:
+            new_x = event.screenPos().x()
+            if abs(new_x - self.placing_cursor_initial_x) < 5:
+                self.timestamp = self.duration * (event.scenePos().x() / self.width())
+                self.update_timestamp()
+            self.placing_cursor = False
         return super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent):
