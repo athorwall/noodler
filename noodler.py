@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
     QFrame,
     QDoubleSpinBox,
     QDialog,
+    QGraphicsView,
+    QGraphicsScene,
 )
 from PyQt6.QtCore import (
     Qt, 
@@ -35,6 +37,39 @@ ICONS_PATH = "icons"
 
 def icon(path):
     return QtGui.QIcon("icons/{}".format(path))
+
+class VerticalPitchTrackingWidget(QWidget):
+    def __init__(self, *args, **kargs):
+        super(VerticalPitchTrackingWidget, self).__init__(*args, **kargs)
+
+        layout = QBoxLayout(QBoxLayout.Direction.TopToBottom)
+
+        self.setLayout(layout)
+
+    def get_current_timestamp(self):
+        # not so good
+        return window.audio_player.current_timestamp
+
+class VerticalPitchTrackingView(QGraphicsView):
+    def __init__(self, *args, **kargs):
+        super(VerticalPitchTrackingView, self).__init__(*args, **kargs)
+
+        self.vertical_pitch_tracking_scene = VerticalPitchTrackingScene()
+        self.setScene(self.vertical_pitch_tracking_scene)
+
+        self.setFrameShape(QFrame.Shape.NoFrame)
+
+        self.horizontalScrollBar().setValue(1)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+        self.show()
+
+    
+
+class VerticalPitchTrackingScene(QGraphicsScene):
+    def __init__(self, *args, **kargs):
+        super(VerticalPitchTrackingScene, self).__init__(*args, **kargs)
 
 class NavigationDock(QWidget):
     def __init__(self, *args, **kargs):
@@ -297,6 +332,11 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.dock_widget)
         self.navigation_widget = NavigationDock()
         self.dock_widget.setWidget(self.navigation_widget)
+
+        self.vertical_pitch_tracking_dock_widget = QDockWidget("Vertical Pitch Tracking")
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.vertical_pitch_tracking_dock_widget)
+        self.vertical_pitch_tracking_widget = VerticalPitchTrackingWidget()
+        self.vertical_pitch_tracking_dock_widget.setWidget(self.vertical_pitch_tracking_widget)
 
         fileMenu = self.menuBar().addMenu("File")
         self.openAction = fileMenu.addAction("Open...", QtGui.QKeySequence.StandardKey.Open)
