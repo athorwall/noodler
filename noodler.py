@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QFrame,
     QDoubleSpinBox,
+    QDialog,
 )
 from PyQt6.QtCore import (
     Qt, 
@@ -209,6 +210,7 @@ class RangeSelectionWidget(QWidget):
         except ValueError:
             return
 
+
 class MainView(QWidget):
     def __init__(self, audio_player, open_action, import_action, *args, **kargs):
         super(MainView, self).__init__(*args, **kargs)
@@ -243,6 +245,37 @@ class MainView(QWidget):
         if self.audio_view != None:
             self.audio_view.zoom_out()
 
+class EffectsDialog(QDialog):
+
+    def __init__(self, play_rate, harmonic_only):
+        super(EffectsDialog, self).__init__()
+
+        layout = QGridLayout()
+
+        self.rate_label = QLabel("Playback rate: ")
+        self.rate_input = QDoubleSpinBox()
+        self.rate_input.setValue(play_rate)
+        self.rate_input.setMaximum(2.0)
+        self.rate_input.setMinimum(0.1)
+
+        layout.addWidget(self.rate_label, 0, 0)
+        layout.addWidget(self.rate_input, 0, 1)
+
+        self.harmonic_checkbox = QCheckBox("Enable HPSS")
+        self.harmonic_checkbox.setChecked(harmonic_only)
+
+        layout.addWidget(self.harmonic_checkbox, 1, 0, 1, 2)
+
+        self.accept_button = QPushButton("OK")
+        self.accept_button.clicked.connect(self.accept)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+
+        layout.addWidget(self.accept_button, 2, 0)
+        layout.addWidget(self.cancel_button, 2, 1)
+
+        self.setLayout(layout)
+
 class MainWindow(QMainWindow):
 
     def __init__(self, audio_player: audio.AudioPlayer):
@@ -253,6 +286,9 @@ class MainWindow(QMainWindow):
 
         self.main_view = None
         self.key_pressed = dict()
+
+        self.harmonic_only = False
+        self.play_rate = 1.0
 
         self.resize(800, 600)
         self.setWindowTitle("Noodler")
@@ -276,6 +312,8 @@ class MainWindow(QMainWindow):
         toolsMenu = self.menuBar().addMenu("Tools")
         setPlaybackRateAction = toolsMenu.addAction("Set Playback Rate", QtGui.QKeySequence("Ctrl+R"))
         setPlaybackRateAction.triggered.connect(self.set_playback_rate)
+        effectsAction = toolsMenu.addAction("Effects...", QtGui.QKeySequence("Ctrl+E"))
+        effectsAction.triggered.connect(self.set_effects)
 
         self.timer = QTimer()
         self.timer.start(15)
@@ -296,21 +334,27 @@ class MainWindow(QMainWindow):
 
             if self.is_key_pressed(Qt.Key.Key_D):
                 if self.is_key_pressed(Qt.Key.Key_Shift):
-                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.5)
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.1)
                 else:
-                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.05)
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp + 0.01)
 
             if self.is_key_pressed(Qt.Key.Key_A):
                 if self.is_key_pressed(Qt.Key.Key_Shift):
-                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.5)
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.1)
                 else:
-                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.05)
+                    self.audio_player.set_current_timestamp(self.audio_player.current_timestamp - 0.01)
 
             if self.main_view != None:
                 if self.is_key_pressed(Qt.Key.Key_E):
-                    self.main_view.audio_view.audio_waveform_scene.shift_loop(0.05)
+                    if self.is_key_pressed(Qt.Key.Key_Shift):
+                        self.main_view.audio_view.audio_waveform_scene.shift_loop(0.1)
+                    else:
+                        self.main_view.audio_view.audio_waveform_scene.shift_loop(0.01)
                 if self.is_key_pressed(Qt.Key.Key_Q):
-                    self.main_view.audio_view.audio_waveform_scene.shift_loop(-0.05)
+                    if self.is_key_pressed(Qt.Key.Key_Shift):
+                        self.main_view.audio_view.audio_waveform_scene.shift_loop(-0.1)
+                    else:
+                        self.main_view.audio_view.audio_waveform_scene.shift_loop(-0.01)
 
     def open(self):
         (path, result) = QFileDialog.getOpenFileName(None, "Open Audio File", "music", "Audio Files (*.mp4)");
@@ -338,12 +382,25 @@ class MainWindow(QMainWindow):
         self.navigation_widget.selection_widget.range_selection_widget.from_widget.setText(utils.seconds_to_time_str(loop_start))
         self.navigation_widget.selection_widget.range_selection_widget.to_widget.setText(utils.seconds_to_time_str(loop_end))
 
-    # TODO: not working right now
     def set_playback_rate(self):
         (rate, _) = QInputDialog.getDouble(None, "Set Playback Rate", "Rate", value=1.0)
         # todo: handle the waiting period gracefully
         new_data = librosa.effects.time_stretch(self.audio_data, rate)
         self.audio_player.set_audio_state(new_data, self.audio_player.audio_state.sampling_rate, rate)
+
+    def set_effects(self):
+        effects_dialog = EffectsDialog(self.play_rate, self.harmonic_only)
+        result = effects_dialog.exec()
+        if result == 1:
+            self.play_rate = effects_dialog.rate_input.value()
+            self.harmonic_only = effects_dialog.harmonic_checkbox.isChecked()
+            new_data = self.audio_data
+            if abs(self.play_rate- 1) > 0.01:
+                new_data = librosa.effects.time_stretch(self.audio_data, self.play_rate)
+            if self.harmonic_only:
+                new_data = librosa.effects.harmonic(new_data)
+            self.audio_player.set_audio_state(new_data, self.audio_player.audio_state.sampling_rate, self.play_rate)
+
 
     def keyReleaseEvent(self, a0: QtGui.QKeyEvent) -> None:
         self.key_pressed[a0.key()] = False 
