@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
     QToolBar,
+    QSpacerItem,
+    QSizePolicy,
 )
 from PyQt6.QtCore import (
     Qt, 
@@ -202,160 +204,6 @@ class VerticalPitchTrackingScene(QGraphicsScene):
             h = key_height * (ms / max_magnitude)
             self.rects[key].setRect(key * key_width, key_height - h, key_width, h)
 
-class NavigationDock(QWidget):
-    def __init__(self, *args, **kargs):
-        super(NavigationDock, self).__init__(*args, **kargs)
-
-        layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
-
-        self.selection_widget = SelectionWidget()
-        layout.addWidget(self.selection_widget)
-
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.Shape.VLine)
-        sep1.setFrameShadow(QFrame.Shadow.Plain)
-        layout.addWidget(sep1)
-        
-        self.move_by_time_widget = MoveSelectionWidget(1, 10, "s", lambda amount: app.postEvent(window, events.ShiftLoopEvent(amount)))
-        layout.addWidget(self.move_by_time_widget)
-
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setFrameShadow(QFrame.Shadow.Plain)
-        layout.addWidget(sep2)
-
-        self.move_by_proportion_widget = MoveSelectionWidget(50, 80, "%", self.on_shift_by_percent)
-        layout.addWidget(self.move_by_proportion_widget)
-
-        layout.addStretch(1)
-
-        self.setLayout(layout)
-
-    def on_shift_by_percent(self, percent):
-        if window.main_view.audio_view is not None:
-            width = window.main_view.audio_view.audio_waveform_scene.loop_end - window.main_view.audio_view.audio_waveform_scene.loop_start
-            amount = width * percent / 100.0
-            app.postEvent(window, events.ShiftLoopEvent(amount))
-
-class PlayControls(QWidget):
-    def __init__(self, *args, **kargs):
-        super(PlayControls, self).__init__(*args, **kargs)
-
-        layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
-
-        self.back_button = QToolButton()
-        self.back_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.back_button.setIcon(icon("back.png"))
-        self.back_button.clicked.connect(lambda: app.postEvent(window, events.BackEvent()))
-        layout.addWidget(self.back_button)
-
-        self.play_button = QToolButton()
-        self.play_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.play_button.setIcon(icon("play.png"))
-        self.play_button.clicked.connect(lambda: app.postEvent(window, events.PlayEvent()))
-        layout.addWidget(self.play_button)
-
-        self.pause_button = QToolButton()
-        self.pause_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.pause_button.setIcon(icon("pause.png"))
-        self.pause_button.clicked.connect(lambda: app.postEvent(window, events.PauseEvent()))
-        layout.addWidget(self.pause_button)
-
-        self.setLayout(layout)
-
-class SelectionWidget(QWidget):
-    def __init__(self, *args, **kargs):
-        super(SelectionWidget, self).__init__(*args, **kargs)
-
-        layout = QBoxLayout(QBoxLayout.Direction.TopToBottom)
-
-        self.play_controls_widget = PlayControls()
-        layout.addWidget(self.play_controls_widget)
-
-        self.range_selection_widget = RangeSelectionWidget()
-        layout.addWidget(self.range_selection_widget)
-
-        self.loop_checkbox = QCheckBox("Loop")
-        layout.addWidget(self.loop_checkbox)
-        self.loop_checkbox.setChecked(True)
-        self.loop_checkbox.stateChanged.connect(self.on_set_loop_changed)
-
-        self.start_from_beginning_checkbox = QCheckBox("Start from beginning of loop")
-        layout.addWidget(self.start_from_beginning_checkbox)
-
-        self.setLayout(layout)
-
-    def on_set_loop_changed(self, state):
-        enabled = False
-        if state == Qt.CheckState.Checked.value:
-            enabled = True
-        event = events.SetLoopConfiguration(enabled)
-        app.postEvent(window, event)
-
-class MoveSelectionWidget(QWidget):
-    def __init__(self, smaller_value, bigger_value, unit, on_change, *args, **kargs):
-        super(MoveSelectionWidget, self).__init__(*args, **kargs)
-
-        self.on_change = on_change
-
-        layout = QGridLayout()
-
-        self.custom_shift_widget = QDoubleSpinBox()
-        self.custom_shift_widget.setSuffix(unit)
-        self.custom_shift_widget.setValue(smaller_value)
-        self.custom_shift_widget.setMaximum(1000.0)
-        layout.addWidget(self.custom_shift_widget, 1, 1, 1, 2)
-
-        self.custom_left_widget = QToolButton()
-        self.custom_left_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.custom_left_widget.setIcon(icon("left_arrow.png"))
-        self.custom_left_widget.clicked.connect(lambda: on_change(-self.custom_shift_widget.value()))
-        layout.addWidget(self.custom_left_widget, 1, 0)
-
-        self.custom_right_widget = QToolButton()
-        self.custom_right_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.custom_right_widget.setIcon(icon("right_arrow.png"))
-        self.custom_right_widget.clicked.connect(lambda: on_change(self.custom_shift_widget.value()))
-        layout.addWidget(self.custom_right_widget, 1, 3)
-
-        self.setLayout(layout)
-
-class RangeSelectionWidget(QWidget):
-    def __init__(self, *args, **kargs):
-        super(RangeSelectionWidget, self).__init__(*args, **kargs)
-
-        layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
-
-        self.from_widget = QLineEdit()
-        self.from_widget.setMaximumWidth(50)
-
-        self.to_label = QLabel("to")
-        self.to_widget = QLineEdit()
-        self.to_widget.setMaximumWidth(50)
-
-        self.from_widget.returnPressed.connect(lambda: self.to_widget.setFocus())
-        self.to_widget.returnPressed.connect(self.on_submit)
-
-        layout.addWidget(self.from_widget)
-        layout.addWidget(self.to_label)
-        layout.addWidget(self.to_widget)
-
-        self.setLayout(layout)
-        self.setMaximumWidth(250)
-
-    def on_submit(self):
-        try:
-            start_second = utils.get_duration_in_seconds(self.from_widget.text())
-            end_second = utils.get_duration_in_seconds(self.to_widget.text())
-            if end_second < start_second:
-                end_second = start_second
-            event = events.SetLoopEvent(start_second, end_second)
-            app.postEvent(window, event)
-            window.setFocus()
-        except ValueError:
-            return
-
-
 class MainView(QWidget):
     def __init__(self, audio_player, open_action, import_action, *args, **kargs):
         super(MainView, self).__init__(*args, **kargs)
@@ -435,7 +283,7 @@ class MainWindow(QMainWindow):
         self.harmonic_only = False
         self.play_rate = 1.0
 
-        self.resize(800, 600)
+        self.resize(1024, 768)
         self.setWindowTitle("Noodler")
 
         self.playback_toolbar = QToolBar("Playback")
@@ -447,7 +295,7 @@ class MainWindow(QMainWindow):
         self.pause_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.playback_toolbar)
 
-        self.loop_toolbar = QToolBar("Loop")
+        self.loop_toolbar = QToolBar("Selection")
         loop_layout = QGridLayout()
         self.range_start_widget = QLineEdit()
         self.range_start_widget.setMaximumWidth(50)
@@ -455,28 +303,63 @@ class MainWindow(QMainWindow):
         loop_layout.addWidget(self.range_start_widget, 0, 1)
         self.current_timestamp_widget = QLineEdit()
         self.current_timestamp_widget.setMaximumWidth(50)
-        loop_layout.addWidget(QLabel("Current:"), 1, 0)
-        loop_layout.addWidget(self.current_timestamp_widget, 1, 1)
+        loop_layout.addWidget(QLabel("Current:"), 0, 2)
+        loop_layout.addWidget(self.current_timestamp_widget, 0, 3)
         self.range_end_widget = QLineEdit()
         self.range_end_widget.setMaximumWidth(50)
-        loop_layout.addWidget(QLabel("End:"), 2, 0)
-        loop_layout.addWidget(self.range_end_widget, 2, 1)
+        loop_layout.addWidget(QLabel("End:"), 1, 0)
+        loop_layout.addWidget(self.range_end_widget, 1, 1)
+
+        self.range_start_widget.returnPressed.connect(lambda: self.range_end_widget.setFocus())
+        self.range_end_widget.returnPressed.connect(self.on_submit_range_selection)
+
         self.loop_checkbox = QCheckBox("Loop")
-        loop_layout.addWidget(self.loop_checkbox, 0, 2)
+        self.loop_checkbox.setChecked(True)
+        self.loop_checkbox.stateChanged.connect(self.on_set_loop_changed)
+        loop_layout.addWidget(self.loop_checkbox, 0, 4)
         self.start_from_beginning_checkbox = QCheckBox("Start from Beginning")
-        loop_layout.addWidget(self.start_from_beginning_checkbox, 1, 2)
+        loop_layout.addWidget(self.start_from_beginning_checkbox, 1, 4)
         loop_layout.setColumnStretch(0, 0)
         loop_layout.setColumnStretch(1, 0)
-        loop_layout.setColumnStretch(2, 1)
+        loop_layout.setColumnStretch(2, 0)
+        loop_layout.setColumnStretch(3, 0)
+        loop_layout.setColumnStretch(4, 1)
         loop_layout_widget = QWidget()
         loop_layout_widget.setLayout(loop_layout)
+        loop_layout_widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         self.loop_toolbar.addWidget(loop_layout_widget)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.loop_toolbar)
 
-        self.dock_widget = QDockWidget("Navigation")
-        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.dock_widget)
-        self.navigation_widget = NavigationDock()
-        self.dock_widget.setWidget(self.navigation_widget)
+        self.move_toolbar = QToolBar("Move Selection")
+        self.move_backward_by_duration_action = self.move_toolbar.addAction(icon("left_arrow.png"), "Move Selection Backward by Duration")
+        self.move_backward_by_duration_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        self.move_by_duration_amount = QDoubleSpinBox()
+        self.move_by_duration_amount.setSuffix("s")
+        self.move_toolbar.addWidget(self.move_by_duration_amount)
+        self.move_forward_by_duration_action = self.move_toolbar.addAction(icon("right_arrow.png"), "Move Selection Forward by Duration")
+        self.move_forward_by_duration_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+
+        self.move_backward_by_duration_action.triggered.connect(
+            lambda: app.postEvent(window, events.ShiftLoopEvent(-self.move_by_duration_amount.value())))
+        self.move_forward_by_duration_action.triggered.connect(
+            lambda: app.postEvent(window, events.ShiftLoopEvent(self.move_by_duration_amount.value())))
+
+        self.move_backward_by_percentage_action = self.move_toolbar.addAction(icon("left_arrow.png"), "Move Selection Backward by Percentage")
+        self.move_backward_by_percentage_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        self.move_by_percentage_amount = QDoubleSpinBox()
+        self.move_by_percentage_amount.setSuffix("%")
+        self.move_by_percentage_amount.setMinimum(0.0)
+        self.move_by_percentage_amount.setMaximum(100.0)
+        self.move_toolbar.addWidget(self.move_by_percentage_amount)
+        self.move_forward_by_percentage_action = self.move_toolbar.addAction(icon("right_arrow.png"), "Move Selection Forward by Percentage")
+        self.move_forward_by_percentage_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+
+        self.move_backward_by_percentage_action.triggered.connect(
+            lambda: self.on_shift_by_percent(-self.move_by_percentage_amount.value()))
+        self.move_forward_by_percentage_action.triggered.connect(
+            lambda: self.on_shift_by_percent(self.move_by_percentage_amount.value()))
+
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.move_toolbar)
 
         self.vertical_pitch_tracking_dock_widget = QDockWidget("Vertical Pitch Tracking")
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.vertical_pitch_tracking_dock_widget)
@@ -541,6 +424,31 @@ class MainWindow(QMainWindow):
                     else:
                         self.main_view.audio_view.audio_waveform_scene.shift_loop(-0.01)
 
+    def on_shift_by_percent(self, percent):
+        if self.main_view.audio_view is not None:
+            width = self.main_view.audio_view.audio_waveform_scene.loop_end - self.main_view.audio_view.audio_waveform_scene.loop_start
+            amount = width * percent / 100.0
+            app.postEvent(window, events.ShiftLoopEvent(amount))
+
+    def on_submit_range_selection(self):
+        try:
+            start_second = utils.get_duration_in_seconds(self.range_start_widget.text())
+            end_second = utils.get_duration_in_seconds(self.range_end_widget.text())
+            if end_second < start_second:
+                end_second = start_second
+            event = events.SetLoopEvent(start_second, end_second)
+            app.postEvent(window, event)
+            window.setFocus()
+        except ValueError:
+            return
+
+    def on_set_loop_changed(self, state):
+        enabled = False
+        if state == Qt.CheckState.Checked.value:
+            enabled = True
+        event = events.SetLoopConfiguration(enabled)
+        app.postEvent(window, event)
+
     def open(self):
         (path, result) = QFileDialog.getOpenFileName(None, "Open Audio File", "music", "Audio Files (*.mp4)");
         if not result:
@@ -565,8 +473,8 @@ class MainWindow(QMainWindow):
     def on_loop_change(self, loop_start, loop_end):
         self.audio_player.set_start_timestamp(loop_start)
         self.audio_player.set_end_timestamp(loop_end)
-        self.navigation_widget.selection_widget.range_selection_widget.from_widget.setText(utils.seconds_to_time_str(loop_start))
-        self.navigation_widget.selection_widget.range_selection_widget.to_widget.setText(utils.seconds_to_time_str(loop_end))
+        self.range_start_widget.setText(utils.seconds_to_time_str(loop_start))
+        self.range_end_widget.setText(utils.seconds_to_time_str(loop_end))
 
     def set_playback_rate(self):
         (rate, _) = QInputDialog.getDouble(None, "Set Playback Rate", "Rate", value=1.0)
@@ -616,7 +524,7 @@ class MainWindow(QMainWindow):
             return
         elif event.type() == events.PlayEvent.TYPE:
             if self.audio_player.audio_state is not None and not self.audio_player.playing:
-                if self.navigation_widget.selection_widget.start_from_beginning_checkbox.isChecked():
+                if self.start_from_beginning_checkbox.isChecked():
                     self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
                 self.audio_player.play()
             return
