@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QCheckBox,
     QPushButton,
-    QToolButton,
     QGridLayout,
     QFrame,
     QDoubleSpinBox,
@@ -19,7 +18,6 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
     QToolBar,
-    QSpacerItem,
     QSizePolicy,
 )
 from PyQt6.QtCore import (
@@ -43,8 +41,10 @@ def icon(path):
     return QtGui.QIcon("icons/{}".format(path))
 
 class VerticalPitchTrackingWidget(QWidget):
-    def __init__(self, *args, **kargs):
+    def __init__(self, audio_player, *args, **kargs):
         super(VerticalPitchTrackingWidget, self).__init__(*args, **kargs)
+
+        self.audio_player = audio_player 
 
         main_layout = QBoxLayout(QBoxLayout.Direction.TopToBottom)
         controls_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
@@ -103,8 +103,8 @@ class VerticalPitchTrackingWidget(QWidget):
 
     def on_timeout(self):
         if self.lock_to_timestamp_checkbox.isChecked():
-            if window.audio_player.audio_state is not None and window.audio_player.current_timestamp != self.timestamp:
-                self.timestamp = window.audio_player.current_timestamp
+            if self.audio_player.audio_state is not None and self.audio_player.current_timestamp != self.timestamp:
+                self.timestamp = self.audio_player.current_timestamp
                 self.timestamp_input.setText(utils.seconds_to_time_str(self.timestamp))
                 self.update_scene()
 
@@ -227,7 +227,7 @@ class MainView(QWidget):
     def show_audio(self, audio_data, on_loop_change):
         while self.layout().count() > 0:
             self.layout().takeAt(0)
-        self.audio_view = audio_view.AudioWaveformView(audio_data, audio_player, on_loop_change, self)
+        self.audio_view = audio_view.AudioWaveformView(audio_data, self.audio_player, on_loop_change, self)
         self.layout().addWidget(self.audio_view)
 
     def zoom_in(self):
@@ -288,11 +288,11 @@ class MainWindow(QMainWindow):
 
         self.playback_toolbar = QToolBar("Playback")
         self.back_action = self.playback_toolbar.addAction(icon("back.png"), "Back")
-        self.back_action.triggered.connect(lambda: app.postEvent(window, events.BackEvent()))
+        self.back_action.triggered.connect(lambda: QApplication.postEvent(self, events.BackEvent()))
         self.play_action = self.playback_toolbar.addAction(icon("play.png"), "Play")
-        self.play_action.triggered.connect(lambda: app.postEvent(window, events.PlayEvent()))
+        self.play_action.triggered.connect(lambda: QApplication.postEvent(self, events.PlayEvent()))
         self.pause_action = self.playback_toolbar.addAction(icon("pause.png"), "Pause")
-        self.pause_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        self.pause_action.triggered.connect(lambda: QApplication.postEvent(self, events.PauseEvent()))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.playback_toolbar)
 
         self.loop_toolbar = QToolBar("Selection")
@@ -332,27 +332,27 @@ class MainWindow(QMainWindow):
 
         self.move_toolbar = QToolBar("Move Selection")
         self.move_backward_by_duration_action = self.move_toolbar.addAction(icon("left_arrow.png"), "Move Selection Backward by Duration")
-        self.move_backward_by_duration_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        self.move_backward_by_duration_action.triggered.connect(lambda: QApplication.postEvent(self, events.PauseEvent()))
         self.move_by_duration_amount = QDoubleSpinBox()
         self.move_by_duration_amount.setSuffix("s")
         self.move_toolbar.addWidget(self.move_by_duration_amount)
         self.move_forward_by_duration_action = self.move_toolbar.addAction(icon("right_arrow.png"), "Move Selection Forward by Duration")
-        self.move_forward_by_duration_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        self.move_forward_by_duration_action.triggered.connect(lambda: QApplication.postEvent(self, events.PauseEvent()))
 
         self.move_backward_by_duration_action.triggered.connect(
-            lambda: app.postEvent(window, events.ShiftLoopEvent(-self.move_by_duration_amount.value())))
+            lambda: QApplication.postEvent(self, events.ShiftLoopEvent(-self.move_by_duration_amount.value())))
         self.move_forward_by_duration_action.triggered.connect(
-            lambda: app.postEvent(window, events.ShiftLoopEvent(self.move_by_duration_amount.value())))
+            lambda: QApplication.postEvent(self, events.ShiftLoopEvent(self.move_by_duration_amount.value())))
 
         self.move_backward_by_percentage_action = self.move_toolbar.addAction(icon("left_arrow.png"), "Move Selection Backward by Percentage")
-        self.move_backward_by_percentage_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        self.move_backward_by_percentage_action.triggered.connect(lambda: QApplication.postEvent(self, events.PauseEvent()))
         self.move_by_percentage_amount = QDoubleSpinBox()
         self.move_by_percentage_amount.setSuffix("%")
         self.move_by_percentage_amount.setMinimum(0.0)
         self.move_by_percentage_amount.setMaximum(100.0)
         self.move_toolbar.addWidget(self.move_by_percentage_amount)
         self.move_forward_by_percentage_action = self.move_toolbar.addAction(icon("right_arrow.png"), "Move Selection Forward by Percentage")
-        self.move_forward_by_percentage_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        self.move_forward_by_percentage_action.triggered.connect(lambda: QApplication.postEvent(self, events.PauseEvent()))
 
         self.move_backward_by_percentage_action.triggered.connect(
             lambda: self.on_shift_by_percent(-self.move_by_percentage_amount.value()))
@@ -363,7 +363,7 @@ class MainWindow(QMainWindow):
 
         self.vertical_pitch_tracking_dock_widget = QDockWidget("Vertical Pitch Tracking")
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.vertical_pitch_tracking_dock_widget)
-        self.vertical_pitch_tracking_widget = VerticalPitchTrackingWidget()
+        self.vertical_pitch_tracking_widget = VerticalPitchTrackingWidget(self.audio_player)
         self.vertical_pitch_tracking_dock_widget.setWidget(self.vertical_pitch_tracking_widget)
 
         fileMenu = self.menuBar().addMenu("File")
@@ -428,7 +428,7 @@ class MainWindow(QMainWindow):
         if self.main_view.audio_view is not None:
             width = self.main_view.audio_view.audio_waveform_scene.loop_end - self.main_view.audio_view.audio_waveform_scene.loop_start
             amount = width * percent / 100.0
-            app.postEvent(window, events.ShiftLoopEvent(amount))
+            QApplication.postEvent(self, events.ShiftLoopEvent(amount))
 
     def on_submit_range_selection(self):
         try:
@@ -437,8 +437,8 @@ class MainWindow(QMainWindow):
             if end_second < start_second:
                 end_second = start_second
             event = events.SetLoopEvent(start_second, end_second)
-            app.postEvent(window, event)
-            window.setFocus()
+            QApplication.postEvent(self, event)
+            self.setFocus()
         except ValueError:
             return
 
@@ -447,7 +447,7 @@ class MainWindow(QMainWindow):
         if state == Qt.CheckState.Checked.value:
             enabled = True
         event = events.SetLoopConfiguration(enabled)
-        app.postEvent(window, event)
+        QApplication.postEvent(self, event)
 
     def open(self):
         (path, result) = QFileDialog.getOpenFileName(None, "Open Audio File", "music", "Audio Files (*.mp4)");
@@ -507,9 +507,9 @@ class MainWindow(QMainWindow):
             return super().keyPressEvent(a0)
         if a0.key() == Qt.Key.Key_Space:
             if self.audio_player.playing:
-                app.postEvent(self, events.PauseEvent())
+                QApplication.postEvent(self, events.PauseEvent())
             else:
-                app.postEvent(self, events.PlayEvent())
+                QApplication.postEvent(self, events.PlayEvent())
         return None
 
     def customEvent(self, event: QEvent):
@@ -543,12 +543,3 @@ class MainWindow(QMainWindow):
             self.audio_player.set_loop(event.get_loop_enabled())
         return super().customEvent(event)
  
-if __name__ == '__main__':
-    audio_player = audio.AudioPlayer()
-    audio_player.start()
-
-    app = QApplication([])
-    app.setStyle('macos')
-    window = MainWindow(audio_player)
-    window.show()
-    app.exec()
