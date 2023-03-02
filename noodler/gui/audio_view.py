@@ -12,8 +12,9 @@ from PyQt6.QtCore import (
 from PyQt6 import QtGui
 import librosa
 import math
-import audio
-import utils
+print(__name__)
+from ..audio import audio 
+from ..utils import utils
 
 class AudioWaveformView(QGraphicsView):
     # audio_data must be mono

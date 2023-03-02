@@ -1,7 +1,6 @@
 from PyQt6.QtWidgets import QApplication
-import audio
-import audio
-import gui
+from noodler import audio
+from noodler import gui
 
 if __name__ == '__main__':
     audio_player = audio.AudioPlayer()

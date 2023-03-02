@@ -29,10 +29,9 @@ from PyQt6 import QtGui
 from pytube import YouTube
 import librosa
 import os
-import audio_view
-import events
-import audio
-import utils
+from . import audio_view, events
+from ..audio import audio
+from ..utils import utils
 
 MUSIC_PATH = "music"
 ICONS_PATH = "icons"
