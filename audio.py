@@ -103,7 +103,7 @@ class AudioPlayer:
     def set_audio_state(self, data, sampling_rate, play_rate):
         self.audio_state = AudioState(data, sampling_rate, play_rate)
         self.start_timestamp = 0.0
-        self.end_timestamp = librosa.get_duration(data, sampling_rate) * play_rate
+        self.end_timestamp = librosa.get_duration(y=data, sr=sampling_rate) * play_rate
         self.current_timestamp = 0.0
         self.ready = True
         self.audio_state_queue.put(self.audio_state)

@@ -76,11 +76,11 @@ class AudioWaveformScene(QGraphicsScene):
         super(AudioWaveformScene, self).__init__(*args, **kargs)
         self.setBackgroundBrush(Qt.GlobalColor.gray)
         self.audio_player = audio_player
-        self.data = librosa.to_mono(audio_data)
+        self.data = librosa.to_mono(y=audio_data)
         self.total_height = 180
         self.waveform_height = 150
         self.scale = 1.0
-        self.duration = librosa.get_duration(self.data, sr=audio_player.audio_state.sampling_rate)
+        self.duration = librosa.get_duration(y=self.data, sr=audio_player.audio_state.sampling_rate)
         self.timestamp = 0.0
         self.waveform = self.create_waveform(1200, self.waveform_height, self.data)
         self.waveform.setY(30)

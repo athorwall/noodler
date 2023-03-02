@@ -14,9 +14,11 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QFrame,
     QDoubleSpinBox,
+    QSpinBox,
     QDialog,
     QGraphicsView,
     QGraphicsScene,
+    QToolBar,
 )
 from PyQt6.QtCore import (
     Qt, 
@@ -42,13 +44,78 @@ class VerticalPitchTrackingWidget(QWidget):
     def __init__(self, *args, **kargs):
         super(VerticalPitchTrackingWidget, self).__init__(*args, **kargs)
 
-        layout = QBoxLayout(QBoxLayout.Direction.TopToBottom)
+        main_layout = QBoxLayout(QBoxLayout.Direction.TopToBottom)
+        controls_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        
+        self.timestamp_input = QLineEdit("00.00")
+        self.timestamp_input.returnPressed.connect(self.on_set_timestamp)
+        controls_layout.addWidget(self.timestamp_input)
 
-        self.setLayout(layout)
+        self.lock_to_timestamp_checkbox = QCheckBox("Lock to playback timestamp")
+        self.lock_to_timestamp_checkbox.setChecked(True)
+        controls_layout.addWidget(self.lock_to_timestamp_checkbox)
 
-    def get_current_timestamp(self):
-        # not so good
-        return window.audio_player.current_timestamp
+        self.threshold_input_label = QLabel("Threshold:")
+        controls_layout.addWidget(self.threshold_input_label)
+        self.threshold_input = QDoubleSpinBox()
+        self.threshold_input.setValue(0.1)
+        self.threshold_input.setMaximum(1.0)
+        self.threshold_input.setMinimum(0.0)
+        self.threshold_input.setSingleStep(0.1)
+        controls_layout.addWidget(self.threshold_input)
+
+        self.window_width_label = QLabel("Window size:")
+        controls_layout.addWidget(self.window_width_label)
+        self.window_width_input = QSpinBox()
+        self.window_width_input.setValue(2048)
+        self.window_width_input.setMinimum(1024)
+        self.window_width_input.setMaximum(10000)
+        controls_layout.addWidget(self.window_width_input)
+
+        refresh_button = QPushButton("Refresh")
+        refresh_button.clicked.connect(self.on_refresh)
+        controls_layout.addWidget(refresh_button)
+        
+        main_layout.addLayout(controls_layout)
+        self.view = VerticalPitchTrackingView()
+        main_layout.addWidget(self.view)
+
+        self.setLayout(main_layout)
+
+        self.audio_data = None
+        self.sr = None
+        self.timestamp = 0.0
+
+        self.timer = QTimer()
+        self.timer.start(30)
+        self.timer.timeout.connect(self.on_timeout)
+
+    def on_set_timestamp(self):
+        self.timestamp = utils.get_duration_in_seconds(self.timestamp_input.text())
+        self.update_scene()
+    
+    def on_refresh(self):
+        threshold = self.threshold_input.value()
+        window_width = self.window_width_input.value()
+        self.view.vertical_pitch_tracking_scene.update_params(threshold, window_width)
+
+    def on_timeout(self):
+        if self.lock_to_timestamp_checkbox.isChecked():
+            if window.audio_player.audio_state is not None and window.audio_player.current_timestamp != self.timestamp:
+                self.timestamp = window.audio_player.current_timestamp
+                self.timestamp_input.setText(utils.seconds_to_time_str(self.timestamp))
+                self.update_scene()
+
+    def update_scene(self):
+        self.view.vertical_pitch_tracking_scene.set_timestamp(self.timestamp)
+        self.view.vertical_pitch_tracking_scene.update()
+
+    def set_audio_data(self, audio_data, sr):
+        self.audio_data = audio_data
+        self.sr = sr
+        threshold = self.threshold_input.value()
+        window_width = self.window_width_input.value()
+        self.view.vertical_pitch_tracking_scene.set_data(self.audio_data, self.sr, threshold, window_width)
 
 class VerticalPitchTrackingView(QGraphicsView):
     def __init__(self, *args, **kargs):
@@ -56,6 +123,8 @@ class VerticalPitchTrackingView(QGraphicsView):
 
         self.vertical_pitch_tracking_scene = VerticalPitchTrackingScene()
         self.setScene(self.vertical_pitch_tracking_scene)
+
+        self.setMinimumHeight(150)
 
         self.setFrameShape(QFrame.Shape.NoFrame)
 
@@ -65,11 +134,73 @@ class VerticalPitchTrackingView(QGraphicsView):
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.show()
 
-    
+
 
 class VerticalPitchTrackingScene(QGraphicsScene):
     def __init__(self, *args, **kargs):
         super(VerticalPitchTrackingScene, self).__init__(*args, **kargs)
+
+        self.audio_data = None
+        self.sr = None
+        self.piptrack = None
+        self.timestamp = 0.0
+
+        self.setBackgroundBrush(Qt.GlobalColor.lightGray)
+
+        self.rects = [None] * 88
+
+    def set_data(self, audio_data, sr, threshold, window_width):
+        self.pitches, self.magnitudes = librosa.piptrack(
+            y=librosa.to_mono(y=audio_data), 
+            sr=sr,
+            threshold=threshold, 
+            n_fft=window_width, 
+            win_length=window_width,
+        )
+        self.audio_data = audio_data
+        self.sr = sr
+        self.create_chart()
+
+    def update_params(self, threshold, window_width):
+        self.pitches, self.magnitudes = librosa.piptrack(
+            y=librosa.to_mono(y=self.audio_data), 
+            sr=self.sr,
+            threshold=threshold, 
+            n_fft=window_width, 
+            win_length=window_width,
+        )
+        self.update()
+
+    def create_chart(self):
+        self.clear()
+        key_width = 20
+        key_height = 100
+        pen = QtGui.QPen(Qt.GlobalColor.black)
+        brush = QtGui.QBrush(Qt.GlobalColor.white)
+        for key in range(0, 88):
+            self.rects[key] = self.addRect(key * key_width, 0, key_width, key_height, pen, brush)
+            text = self.addText(utils.piano_key_to_note(key), QtGui.QFont("Courier New"))
+            text.setDefaultTextColor(Qt.GlobalColor.black)
+            text.setPos(key * key_width, key_height + 5)
+        self.update()
+
+    def set_timestamp(self, timestamp):
+        self.timestamp = timestamp
+
+    def update(self):
+        duration = librosa.get_duration(y=self.audio_data, sr=self.sr)
+        t = int(self.pitches.shape[1] * self.timestamp / duration)
+        pitches = self.pitches[:,t]
+        magnitudes = self.magnitudes[:,t]
+        magnitudes_by_note = utils.group_by_note(pitches, magnitudes)
+        max_magnitude = max(max(magnitudes), 50)
+        #redunant, fix
+        key_width = 20
+        key_height = 100
+        for key in range(0, 88):
+            ms = magnitudes_by_note[key]
+            h = key_height * (ms / max_magnitude)
+            self.rects[key].setRect(key * key_width, key_height - h, key_width, h)
 
 class NavigationDock(QWidget):
     def __init__(self, *args, **kargs):
@@ -114,19 +245,19 @@ class PlayControls(QWidget):
 
         self.back_button = QToolButton()
         self.back_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.back_button.setText("Back")
+        self.back_button.setIcon(icon("back.png"))
         self.back_button.clicked.connect(lambda: app.postEvent(window, events.BackEvent()))
         layout.addWidget(self.back_button)
 
         self.play_button = QToolButton()
         self.play_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.play_button.setText("Play")
+        self.play_button.setIcon(icon("play.png"))
         self.play_button.clicked.connect(lambda: app.postEvent(window, events.PlayEvent()))
         layout.addWidget(self.play_button)
 
         self.pause_button = QToolButton()
         self.pause_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.pause_button.setText("Pause")
+        self.pause_button.setIcon(icon("pause.png"))
         self.pause_button.clicked.connect(lambda: app.postEvent(window, events.PauseEvent()))
         layout.addWidget(self.pause_button)
 
@@ -169,23 +300,6 @@ class MoveSelectionWidget(QWidget):
 
         layout = QGridLayout()
 
-        smaller_text = "{}{}".format(smaller_value, unit)
-        bigger_text = "{}{}".format(bigger_value, unit)
-
-        self.double_left_widget = MoveSelectionWidget.tool_button("Back " + bigger_text)
-        self.double_left_widget.clicked.connect(lambda: on_change(-bigger_value))
-        layout.addWidget(self.double_left_widget, 0, 0)
-        self.left_widget = MoveSelectionWidget.tool_button("Back " + smaller_text)
-        self.left_widget.clicked.connect(lambda: on_change(-smaller_value))
-        layout.addWidget(self.left_widget, 0, 1)
-
-        self.right_widget = MoveSelectionWidget.tool_button("Forward " + smaller_text)
-        self.right_widget.clicked.connect(lambda: on_change(smaller_value))
-        layout.addWidget(self.right_widget, 0, 2)
-        self.double_right_widget = MoveSelectionWidget.tool_button("Forward " + bigger_text)
-        self.double_right_widget.clicked.connect(lambda: on_change(bigger_value))
-        layout.addWidget(self.double_right_widget, 0, 3)
-
         self.custom_shift_widget = QDoubleSpinBox()
         self.custom_shift_widget.setSuffix(unit)
         self.custom_shift_widget.setValue(smaller_value)
@@ -194,23 +308,17 @@ class MoveSelectionWidget(QWidget):
 
         self.custom_left_widget = QToolButton()
         self.custom_left_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.custom_left_widget.setText("Back")
+        self.custom_left_widget.setIcon(icon("left_arrow.png"))
         self.custom_left_widget.clicked.connect(lambda: on_change(-self.custom_shift_widget.value()))
         layout.addWidget(self.custom_left_widget, 1, 0)
 
         self.custom_right_widget = QToolButton()
         self.custom_right_widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.custom_right_widget.setText("Forward")
+        self.custom_right_widget.setIcon(icon("right_arrow.png"))
         self.custom_right_widget.clicked.connect(lambda: on_change(self.custom_shift_widget.value()))
         layout.addWidget(self.custom_right_widget, 1, 3)
 
         self.setLayout(layout)
-
-    def tool_button(text):
-        widget = QToolButton()
-        widget.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        widget.setText(text)
-        return widget
 
 class RangeSelectionWidget(QWidget):
     def __init__(self, *args, **kargs):
@@ -219,9 +327,11 @@ class RangeSelectionWidget(QWidget):
         layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
 
         self.from_widget = QLineEdit()
+        self.from_widget.setMaximumWidth(50)
 
         self.to_label = QLabel("to")
         self.to_widget = QLineEdit()
+        self.to_widget.setMaximumWidth(50)
 
         self.from_widget.returnPressed.connect(lambda: self.to_widget.setFocus())
         self.to_widget.returnPressed.connect(self.on_submit)
@@ -328,6 +438,41 @@ class MainWindow(QMainWindow):
         self.resize(800, 600)
         self.setWindowTitle("Noodler")
 
+        self.playback_toolbar = QToolBar("Playback")
+        self.back_action = self.playback_toolbar.addAction(icon("back.png"), "Back")
+        self.back_action.triggered.connect(lambda: app.postEvent(window, events.BackEvent()))
+        self.play_action = self.playback_toolbar.addAction(icon("play.png"), "Play")
+        self.play_action.triggered.connect(lambda: app.postEvent(window, events.PlayEvent()))
+        self.pause_action = self.playback_toolbar.addAction(icon("pause.png"), "Pause")
+        self.pause_action.triggered.connect(lambda: app.postEvent(window, events.PauseEvent()))
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.playback_toolbar)
+
+        self.loop_toolbar = QToolBar("Loop")
+        loop_layout = QGridLayout()
+        self.range_start_widget = QLineEdit()
+        self.range_start_widget.setMaximumWidth(50)
+        loop_layout.addWidget(QLabel("Start:"), 0, 0)
+        loop_layout.addWidget(self.range_start_widget, 0, 1)
+        self.current_timestamp_widget = QLineEdit()
+        self.current_timestamp_widget.setMaximumWidth(50)
+        loop_layout.addWidget(QLabel("Current:"), 1, 0)
+        loop_layout.addWidget(self.current_timestamp_widget, 1, 1)
+        self.range_end_widget = QLineEdit()
+        self.range_end_widget.setMaximumWidth(50)
+        loop_layout.addWidget(QLabel("End:"), 2, 0)
+        loop_layout.addWidget(self.range_end_widget, 2, 1)
+        self.loop_checkbox = QCheckBox("Loop")
+        loop_layout.addWidget(self.loop_checkbox, 0, 2)
+        self.start_from_beginning_checkbox = QCheckBox("Start from Beginning")
+        loop_layout.addWidget(self.start_from_beginning_checkbox, 1, 2)
+        loop_layout.setColumnStretch(0, 0)
+        loop_layout.setColumnStretch(1, 0)
+        loop_layout.setColumnStretch(2, 1)
+        loop_layout_widget = QWidget()
+        loop_layout_widget.setLayout(loop_layout)
+        self.loop_toolbar.addWidget(loop_layout_widget)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.loop_toolbar)
+
         self.dock_widget = QDockWidget("Navigation")
         self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.dock_widget)
         self.navigation_widget = NavigationDock()
@@ -415,6 +560,7 @@ class MainWindow(QMainWindow):
         self.audio_data, sampling_rate = librosa.load(path, sr=None, mono=False)
         self.audio_player.set_audio_state(self.audio_data, sampling_rate, 1.0)
         self.main_view.show_audio(self.audio_data, self.on_loop_change)
+        self.vertical_pitch_tracking_widget.set_audio_data(self.audio_data, sampling_rate)
 
     def on_loop_change(self, loop_start, loop_end):
         self.audio_player.set_start_timestamp(loop_start)
@@ -425,7 +571,7 @@ class MainWindow(QMainWindow):
     def set_playback_rate(self):
         (rate, _) = QInputDialog.getDouble(None, "Set Playback Rate", "Rate", value=1.0)
         # todo: handle the waiting period gracefully
-        new_data = librosa.effects.time_stretch(self.audio_data, rate)
+        new_data = librosa.effects.time_stretch(y=self.audio_data, rate=rate)
         self.audio_player.set_audio_state(new_data, self.audio_player.audio_state.sampling_rate, rate)
 
     def set_effects(self):
@@ -436,10 +582,11 @@ class MainWindow(QMainWindow):
             self.harmonic_only = effects_dialog.harmonic_checkbox.isChecked()
             new_data = self.audio_data
             if abs(self.play_rate- 1) > 0.01:
-                new_data = librosa.effects.time_stretch(self.audio_data, self.play_rate)
+                new_data = librosa.effects.time_stretch(y=self.audio_data, sr=self.play_rate)
             if self.harmonic_only:
-                new_data = librosa.effects.harmonic(new_data)
+                new_data = librosa.effects.harmonic(y=new_data)
             self.audio_player.set_audio_state(new_data, self.audio_player.audio_state.sampling_rate, self.play_rate)
+            self.vertical_pitch_tracking_widget.set_audio_data(self.audio_data, self.audio_player.audio_state.sampling_rate)
 
 
     def keyReleaseEvent(self, a0: QtGui.QKeyEvent) -> None:
@@ -468,7 +615,7 @@ class MainWindow(QMainWindow):
                 self.main_view.audio_view.audio_waveform_scene.shift_loop(event.get_amount())
             return
         elif event.type() == events.PlayEvent.TYPE:
-            if not self.audio_player.playing:
+            if self.audio_player.audio_state is not None and not self.audio_player.playing:
                 if self.navigation_widget.selection_widget.start_from_beginning_checkbox.isChecked():
                     self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
                 self.audio_player.play()
@@ -477,12 +624,13 @@ class MainWindow(QMainWindow):
             self.audio_player.stop()
             return
         elif event.type() == events.BackEvent.TYPE:
-            if self.audio_player.playing:
-                self.audio_player.stop()
-                self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
-                self.audio_player.play()
-            else:
-                self.audio_player.set_current_timestamp(self.main_view.audio_view.audio_waveform_scene.loop_start)
+            if self.main_view.audio_view is not None:
+                if self.audio_player.playing:
+                    self.audio_player.stop()
+                    self.audio_player.set_current_timestamp(self.audio_player.start_timestamp)
+                    self.audio_player.play()
+                else:
+                    self.audio_player.set_current_timestamp(self.main_view.audio_view.audio_waveform_scene.loop_start)
         elif event.type() == events.SetLoopConfiguration.TYPE:
             self.audio_player.set_loop(event.get_loop_enabled())
         return super().customEvent(event)

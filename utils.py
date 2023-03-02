@@ -33,19 +33,35 @@ def note_to_piano_key(note):
 def piano_key_to_note(piano_key):
     return librosa.midi_to_note(piano_key_to_midi(piano_key))
 
+def group_by_note(pitches, magnitudes):
+    rows = len(pitches)
+    result = numpy.zeros(88)
+    for b in range(0, rows):
+        magnitude = magnitudes[b]
+        pitch = pitches[b]
+        if pitch > 0.0 and magnitude > 0.0:
+            note = librosa.hz_to_note(pitch)
+            piano_key = note_to_piano_key(note)
+            result[piano_key] += magnitude
+    return result
+
 # Performs librosa pitch-tracking and then groups the results by note.
 # The result is an array for which arr[k, t] is the magnitude of note k (0 - 87)
 # at time t.
-def piptrack_by_note(y, sr, **kargs):
-    pitches, magnitudes = librosa.piptrack(y=y, sr=sr, threshold=0.00, **kargs)
-    cols = magnitudes.shape[1]
-    result = numpy.zeros(88, cols)
-    for t in range(0, cols):
-        magnitudes_at_t = magnitudes[:,t]
-        pitches_at_t = pitches[:,t]
-        for (b, magnitude) in enumerate(magnitudes_at_t):
-            pitch = pitches_at_t[b]
-            note = librosa.hz_to_note(pitch)
-            piano_key = note_to_piano_key(note)
-            result[piano_key, t] += magnitude
-    return result
+# def piptrack_by_note(y, sr, **kargs):
+#     y = librosa.to_mono(y=y)
+#     pitches, magnitudes = librosa.piptrack(y=y, sr=sr, threshold=0.00, **kargs)
+#     rows = magnitudes.shape[0]
+#     cols = magnitudes.shape[1]
+#     result = numpy.zeros((88, cols))
+#     for t in range(0, cols):
+#         if t % 100 == 0:
+#             print(t)
+#         for b in range(0, rows):
+#             magnitude = magnitudes[b,t]
+#             pitch = pitches[b,t]
+#             if pitch > 0.0:
+#                 note = librosa.hz_to_note(pitch)
+#                 piano_key = note_to_piano_key(note)
+#                 result[piano_key, t] += magnitude
+#     return result
